@@ -16,7 +16,9 @@ fn add_hook(a: c_int, b: c_int) callconv(.C) c_int {
 
 fn protect(lib: std.DynLib) !void {
     var pages = lib.memory;
+    std.debug.print("pages: {d}\n", .{pages.len});
     pages.len = std.mem.alignForward(usize, pages.len, std.mem.page_size);
+    std.debug.print("pages: {d}\n", .{pages.len});
     try std.os.mprotect(pages, std.os.PROT.READ | std.os.PROT.WRITE | std.os.PROT.EXEC);
 }
 
@@ -60,13 +62,18 @@ pub fn main() !void {
     try std.testing.expect(r1 == 3);
     std.debug.print("add(1, 2) = {d}\n", .{r1});
 
-    try protect(lib);
-    installHook(@TypeOf(add_hook), add, &add_hook);
+    // try protect(lib);
+    // installHook(@TypeOf(add_hook), add, &add_hook);
+
+    const hook = try Hook(@TypeOf(add_hook)).init(add, &add_hook);
+    // defer _ = hook.deinit();
 
     const r2 = add(1, 2);
     try std.testing.expect(r2 == 99);
     std.debug.print("add(1, 2) = {d}\n", .{r2});
+    _ = hook.deinit();
 
-    const hook = Hook(@TypeOf(add_hook)).init(add, &add_hook);
-    defer hook.deinit();
+    const r3 = add(1, 2);
+    try std.testing.expect(r3 == 3);
+    std.debug.print("add(1, 2) = {d}\n", .{r3});
 }
