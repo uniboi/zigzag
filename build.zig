@@ -4,9 +4,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const @"zig-dis-x86_64" = b.dependency("zig-dis-x86_64", .{ .target = target, .optimize = optimize });
+    const dis_x86_64 = @"zig-dis-x86_64".module("dis_x86_64");
+
     const lib = b.addStaticLibrary(.{
         .name = "zigzag",
-        .root_source_file = .{ .path = "src/root.zig" },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/root.zig" } },
         .target = target,
         .optimize = optimize,
     });
@@ -15,18 +18,18 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "zigzag",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/main.zig" } },
         .target = target,
         .optimize = optimize,
     });
-    exe.addIncludePath(.{ .path = "csrc" });
+    exe.root_module.addImport("dis_x86_64", dis_x86_64);
 
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
 
     const exampleLib = b.addSharedLibrary(.{ .name = "cExampleLib", .target = target, .optimize = optimize });
-    exampleLib.addCSourceFile(.{ .file = .{ .path = "csrc/add.c" }, .flags = &.{} });
+    exampleLib.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "csrc/add.c" } }, .flags = &.{} });
     exampleLib.linkLibC();
 
     b.installArtifact(exampleLib);
@@ -52,7 +55,7 @@ pub fn build(b: *std.Build) void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/root.zig" },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/root.zig" } },
         .target = target,
         .optimize = optimize,
     });
@@ -60,7 +63,7 @@ pub fn build(b: *std.Build) void {
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/main.zig" } },
         .target = target,
         .optimize = optimize,
     });

@@ -15,7 +15,7 @@ fn writeJumpToPayload(target: [*]u8, payloadAddress: usize) [13]u8 {
         0x00,
         0x00,
     };
-    std.mem.writeInt(u64, mvToR10[2..], payloadAddress, endianness); // write destination arg
+    std.mem.writeInt(u64, mvToR10[2..], payloadAddress, .little); // write destination arg
 
     const jmpToR10 = [_]u8{ 0x41, 0xFF, 0xE2 }; // jmp r10
 
@@ -57,7 +57,6 @@ pub fn Hook(comptime T: type) type {
 
             return .{
                 .target = target,
-                // .payload = payload,
                 .oldInstructions = oldInstructions,
             };
         }
@@ -71,9 +70,34 @@ pub fn Hook(comptime T: type) type {
             const body: [*]u8 = @ptrCast(self.target);
             _ = body;
             @memcpy(@as([*]u8, @ptrCast(self.target)), &self.oldInstructions);
-            std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC) catch return false;
+            // std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC) catch return false;
 
             return true;
         }
+
+        fn initTrampoline() void {}
     };
 }
+
+// TODO: VirtualAlloc always allocates blocks of granular size
+// implement an allocator that allows multiple smaller blocks for trampolines in a block allocated by VirtualAlloc
+pub const Trampoline = opaque {
+    const Error = std.os.windows.VirtualAllocError || std.posix.MProtectError;
+    const memory_block_size = 0x1000;
+
+    pub fn init(address: usize, size: usize) Error!*Trampoline {
+        _ = size;
+        const blob: *Trampoline = @ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE));
+        const pages = getPages(@intFromPtr(blob));
+        try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
+        return blob;
+    }
+
+    pub fn deinit(buf: *Trampoline) bool {
+        const pages = getPages(@intFromPtr(buf));
+        try std.posix.mprotect(pages, std.posix.READ | std.posix.WRITE); // TODO: does virtualfree reset protection itself?
+
+        std.os.windows.VirtualFree(buf, 0, std.os.windows.MEM_RELEASE);
+        return true;
+    }
+};
