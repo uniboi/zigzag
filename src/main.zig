@@ -5,6 +5,7 @@ const Disassembler = zds.Disassembler;
 const zz = @import("root.zig");
 const Hook = zz.Hook;
 const TrampolineBuffer = zz.SharedExecutableBlock;
+const SharedBlocks = zz.SharedBlocks;
 
 const AddSignature = fn (c_int, c_int) callconv(.C) c_int;
 const SquareSignature = fn (c_int) callconv(.C) c_int;
@@ -30,10 +31,12 @@ pub fn main() !void {
     std.debug.print("{d}\n", .{r1});
 
     // create a hook
-    var tr = try TrampolineBuffer.initNearAddress(@intFromPtr(add));
-    defer _ = tr.deinit();
+    //var tr = try TrampolineBuffer.initNearAddress(@intFromPtr(add));
+    //defer _ = tr.deinit();
+    var tr = SharedBlocks.init();
+    defer tr.deinit();
 
-    const hook = try Hook(AddSignature).init(add, &add_detour, tr);
+    const hook = try Hook(AddSignature).init(add, &add_detour, &tr);
 
     // expect hooked result
     const r2 = add(1, 2);
@@ -55,7 +58,7 @@ pub fn main() !void {
     const sq_a = square(2);
     try std.testing.expect(sq_a == 4);
 
-    const square_hook = try Hook(SquareSignature).init(square, &square_detour, tr);
+    const square_hook = try Hook(SquareSignature).init(square, &square_detour, &tr);
     defer _ = square_hook.deinit();
     const sq_b = square(2);
     try std.testing.expect(sq_b == 5);

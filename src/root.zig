@@ -86,9 +86,10 @@ pub fn Hook(comptime T: type) type {
         target: *T,
         replaced_instructions: [30]u8,
         delegate: *const T,
+        block: *SharedExecutableBlock,
 
         /// Construct a hook to change all calls for `target` to `payload`
-        pub fn init(target: *T, payload: *const T, tramp: *SharedExecutableBlock) Error!Self {
+        pub fn init(target: *T, payload: *const T, blocks: *SharedBlocks) Error!Self {
             const target_address = @intFromPtr(target);
             const target_bytes: [*]u8 = @ptrCast(target);
             const original_instructions: [30]u8 = target_bytes[0..30].*;
@@ -98,7 +99,7 @@ pub fn Hook(comptime T: type) type {
             try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
 
             // TODO: try to allocate a new buffer if no chunks are free
-            const trampoline_buffer = try tramp.reserveChunk();
+            const block, const trampoline_buffer = try blocks.reserveChunk(target_address);
             const trampoline_size = try writeTrampolineBody(@intFromPtr(trampoline_buffer), target_address);
 
             // writeAbsoluteJump(@ptrFromInt(@intFromPtr(trampoline_buffer) + trampoline_size));
@@ -114,6 +115,7 @@ pub fn Hook(comptime T: type) type {
             return .{
                 .target = target,
                 .delegate = @ptrCast(trampoline_buffer),
+                .block = block,
                 .replaced_instructions = original_instructions,
             };
         }
@@ -121,6 +123,8 @@ pub fn Hook(comptime T: type) type {
         /// revert patched instructions in the `target` body.
         /// returns `false` if memory protections cannot be updated.
         pub fn deinit(self: Self) bool {
+            self.block.releaseChunk(@ptrCast(self.delegate));
+
             const pages = getPages(@intFromPtr(self.target));
 
             std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC) catch return false;
@@ -134,6 +138,39 @@ pub fn Hook(comptime T: type) type {
         fn initTrampoline() void {}
     };
 }
+
+pub const SharedBlocks = struct {
+    const Error = SharedExecutableBlock.InitNearbyError || SharedExecutableBlock.AllocBlockError || SharedExecutableBlock.ReserveChunkError;
+    first: ?*SharedExecutableBlock,
+
+    pub fn init() SharedBlocks {
+        return .{ .first = null };
+    }
+
+    pub fn deinit(self: SharedBlocks) void {
+        var current = self.first;
+        while (current) |block| {
+            current = block.head.next;
+            _ = block.deinit();
+        }
+    }
+
+    pub fn reserveChunk(self: *SharedBlocks, addr: usize) Error!struct { *SharedExecutableBlock, *SharedExecutableBlock.Chunk } {
+        const max_distance = std.math.maxInt(u32);
+
+        var current = self.first;
+        while (current) |block| : (current = block.head.next) {
+            const block_address = @intFromPtr(block);
+            if ((block_address < addr) and (addr - block_address <= max_distance)) {
+                return .{ block, block.reserveChunk() catch continue };
+            }
+        }
+
+        self.first = try SharedExecutableBlock.initNearAddress(addr);
+        const chunk = try self.first.?.reserveChunk();
+        return .{ self.first.?, chunk };
+    }
+};
 
 pub const SharedExecutableBlock = struct {
     const memory_block_size = 0x1000;
@@ -156,20 +193,15 @@ pub const SharedExecutableBlock = struct {
     const Chunk = [trampoline_buffer_size]u8;
 
     comptime {
-        //@compileLog(@sizeOf(SharedExecutableBlock));
-        //@compileLog(chunk_amount, @sizeOf(Chunk));
-        //@compileLog(@sizeOf(Chunk) * 89, @sizeOf([89]Chunk), trampoline_buffer_size);
-        //@compileLog(@sizeOf(ChunkState), @sizeOf(?*SharedExecutableBlock));
         std.debug.assert(@sizeOf(SharedExecutableBlock) <= memory_block_size);
     }
 
     const Head = struct {
         reserved_chunks: ChunkState,
-        next_block: ?*SharedExecutableBlock,
+        next: ?*SharedExecutableBlock,
     };
 
     head: Head,
-    // chunks: *ExecutableBuffer,
     chunks: [chunk_amount]Chunk,
 
     pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
@@ -177,7 +209,7 @@ pub const SharedExecutableBlock = struct {
         const pages = getPages(@intFromPtr(blob));
         try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
 
-        blob.head.next_block = null;
+        blob.head.next = null;
         blob.head.reserved_chunks = ChunkState.initAllTo(0);
         return blob;
     }
@@ -211,54 +243,15 @@ pub const SharedExecutableBlock = struct {
     }
 
     /// release a chunk acquired from this buffer
-    pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *Chunk) void {
+    pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *const Chunk) void {
         const chunk_addr = @intFromPtr(chunk);
-        const chunks_addr = @intFromPtr(self.chunks);
+        const chunks_addr = @intFromPtr(&self.chunks);
 
         std.debug.assert(chunk_addr >= chunks_addr);
         std.debug.assert((chunk_addr - chunks_addr) < chunk_amount);
 
         const index = chunk_addr - chunks_addr;
-        self.reserved_chunks.set(index, 0);
-    }
-};
-
-// TODO: Linux compatibility
-const ExecutableBuffer = opaque {
-    const Error = std.os.windows.VirtualAllocError || std.posix.MProtectError;
-    const Chunk = [trampoline_buffer_size]u8;
-    const memory_block_size = 0x1000;
-
-    pub const State = struct {
-        const chunk_amount = memory_block_size / trampoline_buffer_size;
-        occupied_chunks: [chunk_amount]bool,
-        buffer: *ExecutableBuffer,
-
-        pub fn init(address: usize) Error!State {
-            return .{
-                .occupied_chunks = .{false} ** chunk_amount,
-                .buffer = try ExecutableBuffer.init(address),
-            };
-        }
-
-        pub fn deinit(self: State) bool {
-            return self.buffer.deinit();
-        }
-    };
-
-    pub fn init(address: usize) Error!*ExecutableBuffer {
-        const blob: *ExecutableBuffer = @ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE));
-        const pages = getPages(@intFromPtr(blob));
-        try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
-        return blob;
-    }
-
-    pub fn deinit(buf: *ExecutableBuffer) bool {
-        const pages = getPages(@intFromPtr(buf));
-        std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE) catch return false; // TODO: does virtualfree reset protection itself?
-
-        std.os.windows.VirtualFree(buf, 0, std.os.windows.MEM_RELEASE);
-        return true;
+        self.head.reserved_chunks.set(index, 0);
     }
 };
 
