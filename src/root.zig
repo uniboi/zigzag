@@ -2,33 +2,8 @@ const std = @import("std");
 const Disassembler = @import("dis_x86_64").Disassembler;
 const endianness = @import("builtin").target.cpu.arch.endian();
 
-fn writeJumpToPayload(target: [*]u8, payloadAddress: usize) [13]u8 {
-    var mvToR10 = [_]u8{
-        0x49, // mov
-        0xBA, // %r10
-        // destination address
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-    };
-    std.mem.writeInt(u64, mvToR10[2..], payloadAddress, .little); // write destination arg
-
-    const jmpToR10 = [_]u8{ 0x41, 0xFF, 0xE2 }; // jmp r10
-
-    // mov %r10 destination
-    // jmp %r10
-    const middleman = mvToR10 ++ jmpToR10;
-    var prevInstructions = [_]u8{0} ** middleman.len;
-    @memcpy(&prevInstructions, target[0..middleman.len]);
-    @memcpy(target, &middleman);
-
-    return prevInstructions;
-}
+const max_instruction_size = 15;
+const trampoline_buffer_size = (max_instruction_size * 2) + @sizeOf(JMP_ABS);
 
 fn getPages(target: usize) []align(std.mem.page_size) u8 {
     const pageAlignedPtr: [*]u8 = @ptrFromInt(std.mem.alignBackward(usize, target, std.mem.page_size));
@@ -37,7 +12,7 @@ fn getPages(target: usize) []align(std.mem.page_size) u8 {
 
 // TODO: RIP should be able to handle regions after address as well
 /// seek within 32 bit range
-pub fn findPreviousFreeRegion(address: usize) std.os.windows.VirtualQueryError!?usize {
+fn findPreviousFreeRegion(address: usize) std.os.windows.VirtualQueryError!?usize {
     var system_info: std.os.windows.SYSTEM_INFO = undefined;
     std.os.windows.kernel32.GetSystemInfo(&system_info);
 
@@ -71,12 +46,11 @@ pub fn findPreviousFreeRegion(address: usize) std.os.windows.VirtualQueryError!?
 }
 
 /// returns amount of copied bytes
-fn copyInstructions(dest: usize, source: usize) Disassembler.Error!usize {
+fn writeTrampolineBody(dest: usize, source: usize) Disassembler.Error!usize {
     const dest_bytes: [*]u8 = @ptrFromInt(dest);
     const source_bytes: [*]u8 = @ptrFromInt(source);
 
     const min_size = @sizeOf(JMP_ABS);
-    const max_instruction_size = 15;
 
     var disassembler = Disassembler.init(source_bytes[0 .. min_size + max_instruction_size]);
     var last_pos: usize = 0;
@@ -107,32 +81,29 @@ pub fn Hook(comptime T: type) type {
         const Self = @This();
         pub const Error = error{
             UnavailableNearbyPage,
-        } || Trampoline.Error || Disassembler.Error || std.posix.MProtectError || std.os.windows.VirtualQueryError;
+        } || SharedExecutableBlock.ReserveChunkError || Disassembler.Error || std.posix.MProtectError || std.os.windows.VirtualQueryError;
 
         target: *T,
-        replaced_instructions: [32]u8,
+        replaced_instructions: [30]u8,
         delegate: *const T,
 
         /// Construct a hook to change all calls for `target` to `payload`
-        pub fn init(target: *T, payload: *const T) Error!Self {
+        pub fn init(target: *T, payload: *const T, tramp: *SharedExecutableBlock) Error!Self {
             const target_address = @intFromPtr(target);
             const target_bytes: [*]u8 = @ptrCast(target);
-            const original_instructions: [32]u8 = target_bytes[0..32].*;
+            const original_instructions: [30]u8 = target_bytes[0..30].*;
 
             // allow writing instructions in the pages that need to be patched
             const pages = getPages(target_address);
             try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
 
-            // const oldInstructions = writeJumpToPayload(@ptrCast(target), @intFromPtr(payload));
-            const region = try findPreviousFreeRegion(target_address) orelse return Error.UnavailableNearbyPage;
-            // TODO: reuse pages for multiple simultaneous pages
-            const trampoline_buffer = try Trampoline.init(region);
-            const trampoline_bytes: [*]u8 = @ptrCast(trampoline_buffer);
-            const trampoline_size = try copyInstructions(@intFromPtr(trampoline_buffer), target_address);
+            // TODO: try to allocate a new buffer if no chunks are free
+            const trampoline_buffer = try tramp.reserveChunk();
+            const trampoline_size = try writeTrampolineBody(@intFromPtr(trampoline_buffer), target_address);
 
             // writeAbsoluteJump(@ptrFromInt(@intFromPtr(trampoline_buffer) + trampoline_size));
             const jmp_to_resume: JMP_ABS = .{ .addr = target_address + trampoline_size };
-            @memcpy(trampoline_bytes[trampoline_size .. trampoline_size + @sizeOf(JMP_ABS)], @as([*]const u8, @ptrCast(&jmp_to_resume)));
+            @memcpy(trampoline_buffer[trampoline_size .. trampoline_size + @sizeOf(JMP_ABS)], @as([*]const u8, @ptrCast(&jmp_to_resume)));
 
             const jmp_to_hook: JMP_ABS = .{ .addr = @intFromPtr(payload) };
             @memcpy(target_bytes[0..@sizeOf(JMP_ABS)], @as([*]const u8, @ptrCast(&jmp_to_hook)));
@@ -157,28 +128,132 @@ pub fn Hook(comptime T: type) type {
             @memcpy(body, &self.replaced_instructions);
             std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC) catch return false;
 
-            const trampoline: *Trampoline = @constCast(@ptrCast(self.delegate));
-            return trampoline.deinit();
+            return true;
         }
 
         fn initTrampoline() void {}
     };
 }
 
-// TODO: VirtualAlloc always allocates blocks of granular size
-// implement an allocator that allows multiple smaller blocks for trampolines in a block allocated by VirtualAlloc
-pub const Trampoline = opaque {
+pub const SharedExecutableBlock = struct {
+    const memory_block_size = 0x1000;
+    // const chunk_amount = memory_block_size / (@sizeOf(Chunk) + (1 / 8));
+
+    const chunk_amount = n: {
+        const n = (memory_block_size - @sizeOf(?*SharedExecutableBlock)) / (@sizeOf(Chunk) + (1 / 8));
+        if (n + @sizeOf(std.PackedIntArray(u1, n)) > memory_block_size) {
+            break :n n - @sizeOf(Chunk);
+        }
+
+        break :n n;
+    };
+
+    const InitNearbyError = error{UnavailableNearbyPage};
+    const AllocBlockError = std.os.windows.VirtualAllocError || std.posix.MProtectError;
+    const ReserveChunkError = error{NoAvailableChunk};
+
+    const ChunkState = std.PackedIntArray(u1, chunk_amount);
+    const Chunk = [trampoline_buffer_size]u8;
+
+    comptime {
+        //@compileLog(@sizeOf(SharedExecutableBlock));
+        //@compileLog(chunk_amount, @sizeOf(Chunk));
+        //@compileLog(@sizeOf(Chunk) * 89, @sizeOf([89]Chunk), trampoline_buffer_size);
+        //@compileLog(@sizeOf(ChunkState), @sizeOf(?*SharedExecutableBlock));
+        std.debug.assert(@sizeOf(SharedExecutableBlock) <= memory_block_size);
+    }
+
+    const Head = struct {
+        reserved_chunks: ChunkState,
+        next_block: ?*SharedExecutableBlock,
+    };
+
+    head: Head,
+    // chunks: *ExecutableBuffer,
+    chunks: [chunk_amount]Chunk,
+
+    pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
+        const blob: *SharedExecutableBlock = @alignCast(@ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE)));
+        const pages = getPages(@intFromPtr(blob));
+        try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
+
+        blob.head.next_block = null;
+        blob.head.reserved_chunks = ChunkState.initAllTo(0);
+        return blob;
+    }
+
+    pub fn initNearAddress(address: usize) (InitNearbyError || AllocBlockError)!*SharedExecutableBlock {
+        const region = try findPreviousFreeRegion(address) orelse return InitNearbyError.UnavailableNearbyPage;
+        return init(region);
+    }
+
+    pub fn deinit(self: *SharedExecutableBlock) bool {
+        // return self.chunks.deinit();
+        const buf: *anyopaque = @ptrCast(self);
+        const pages = getPages(@intFromPtr(buf));
+        std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE) catch return false; // TODO: does virtualfree reset protection itself?
+
+        std.os.windows.VirtualFree(buf, 0, std.os.windows.MEM_RELEASE);
+        return true;
+    }
+
+    pub fn reserveChunk(self: *SharedExecutableBlock) ReserveChunkError!*Chunk {
+        for (0..chunk_amount) |i| {
+            if (self.head.reserved_chunks.get(i) == 1) {
+                continue;
+            }
+
+            self.head.reserved_chunks.set(i, 1);
+            return @ptrFromInt(@intFromPtr(&self.chunks) + (i * trampoline_buffer_size));
+        }
+
+        return ReserveChunkError.NoAvailableChunk;
+    }
+
+    /// release a chunk acquired from this buffer
+    pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *Chunk) void {
+        const chunk_addr = @intFromPtr(chunk);
+        const chunks_addr = @intFromPtr(self.chunks);
+
+        std.debug.assert(chunk_addr >= chunks_addr);
+        std.debug.assert((chunk_addr - chunks_addr) < chunk_amount);
+
+        const index = chunk_addr - chunks_addr;
+        self.reserved_chunks.set(index, 0);
+    }
+};
+
+// TODO: Linux compatibility
+const ExecutableBuffer = opaque {
     const Error = std.os.windows.VirtualAllocError || std.posix.MProtectError;
+    const Chunk = [trampoline_buffer_size]u8;
     const memory_block_size = 0x1000;
 
-    pub fn init(address: usize) Error!*Trampoline {
-        const blob: *Trampoline = @ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE));
+    pub const State = struct {
+        const chunk_amount = memory_block_size / trampoline_buffer_size;
+        occupied_chunks: [chunk_amount]bool,
+        buffer: *ExecutableBuffer,
+
+        pub fn init(address: usize) Error!State {
+            return .{
+                .occupied_chunks = .{false} ** chunk_amount,
+                .buffer = try ExecutableBuffer.init(address),
+            };
+        }
+
+        pub fn deinit(self: State) bool {
+            return self.buffer.deinit();
+        }
+    };
+
+    pub fn init(address: usize) Error!*ExecutableBuffer {
+        const blob: *ExecutableBuffer = @ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE));
         const pages = getPages(@intFromPtr(blob));
         try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
         return blob;
     }
 
-    pub fn deinit(buf: *Trampoline) bool {
+    pub fn deinit(buf: *ExecutableBuffer) bool {
         const pages = getPages(@intFromPtr(buf));
         std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE) catch return false; // TODO: does virtualfree reset protection itself?
 
@@ -188,7 +263,7 @@ pub const Trampoline = opaque {
 };
 
 /// 64 bit indirect absolute jump
-pub const JMP_ABS = packed struct {
+const JMP_ABS = packed struct {
     op1: u8 = 0xFF,
     op2: u8 = 0x25,
     dummy: u32 = 0x0,
