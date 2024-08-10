@@ -10,40 +10,6 @@ pub fn getPages(target: usize) []align(std.mem.page_size) u8 {
     return @alignCast(pageAlignedPtr[0..std.mem.page_size]); // TODO: check if patched instructions cross page boundaries
 }
 
-// TODO: RIP should be able to handle regions after address as well
-fn findPreviousFreeRegion(address: usize) std.os.windows.VirtualQueryError!?usize {
-    var system_info: std.os.windows.SYSTEM_INFO = undefined;
-    std.os.windows.kernel32.GetSystemInfo(&system_info);
-
-    const min_address = if (std.math.maxInt(i32) > address)
-        @intFromPtr(system_info.lpMinimumApplicationAddress)
-    else
-        address - std.math.maxInt(i32);
-
-    var probe_address = address;
-
-    // TODO: this is from minhook, not quite sure if allat is required
-    probe_address -= probe_address % system_info.dwAllocationGranularity;
-    probe_address -= system_info.dwAllocationGranularity;
-
-    while (probe_address > min_address) {
-        var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
-        const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(std.os.windows.MEMORY_BASIC_INFORMATION));
-
-        if (info_size == 0) {
-            break;
-        }
-
-        if (memory_info.State == std.os.windows.MEM_FREE) {
-            return probe_address;
-        }
-
-        probe_address -= @intFromPtr(memory_info.AllocationBase) - system_info.dwAllocationGranularity;
-    }
-
-    return null;
-}
-
 /// returns amount of copied bytes
 fn writeTrampolineBody(dest: usize, source: usize) Disassembler.Error!usize {
     const dest_bytes: [*]u8 = @ptrFromInt(dest);
