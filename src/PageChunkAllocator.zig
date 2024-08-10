@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const ChunkAllocator = @import("ChunkAllocator.zig");
 const Chunk = ChunkAllocator.Chunk;
 const ReserveChunkError = ChunkAllocator.ReserveChunkError;
@@ -101,6 +102,10 @@ pub const SharedExecutableBlock = struct {
         const blob: *SharedExecutableBlock = @alignCast(@ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE)));
         const pages = getPages(@intFromPtr(blob));
         try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
+
+        if (builtin.mode == .Debug) {
+            @memset(@as(*[memory_block_size]u8, @ptrCast(blob)), 0xCC);
+        }
 
         blob.head.next = null;
         blob.head.reserved_chunks = ChunkState.initAllTo(0);
