@@ -74,13 +74,14 @@ fn writeAbsoluteJump(address: [*]u8, destination: usize) void {
     @memcpy(address[0..@sizeOf(JMP_ABS)], @as([*]const u8, @ptrCast(&jmp)));
 }
 
+pub const Error = error{
+    UnavailableNearbyPage,
+} || ChunkAllocator.ReserveChunkError || Disassembler.Error || std.posix.MProtectError || std.os.windows.VirtualQueryError;
+
 /// target function body must be at least 13 bytes large
 pub fn Hook(comptime T: type) type {
     return struct {
         const Self = @This();
-        pub const Error = error{
-            UnavailableNearbyPage,
-        } || ChunkAllocator.ReserveChunkError || Disassembler.Error || std.posix.MProtectError || std.os.windows.VirtualQueryError;
 
         target: *T,
         replaced_instructions: [30]u8,
