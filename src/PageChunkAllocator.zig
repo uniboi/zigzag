@@ -49,14 +49,16 @@ fn free(ctx: *anyopaque, ptr: *const Chunk) void {
     unreachable;
 }
 
-/// Returns `true` if all blocks have been freed
-pub fn deinit(self: Allocator) void {
+/// free all pages allocated by this allocator.
+/// make sure to deinitialize all hooks that use Chunks from this allocator before freeing.
+pub fn deinit(self: *Allocator) void {
     var current_block = self.first_block;
     while (current_block) |block| {
         current_block = block.head.next;
-        // TODO: error handling page permissions
-        _ = block.deinit();
+        block.deinit();
     }
+
+    self.first_block = null;
 }
 
 pub fn allocator(self: *Allocator) ChunkAllocator {
@@ -110,14 +112,9 @@ pub const SharedExecutableBlock = struct {
         return init(region);
     }
 
-    pub fn deinit(self: *SharedExecutableBlock) bool {
-        // return self.chunks.deinit();
+    pub fn deinit(self: *SharedExecutableBlock) void {
         const buf: *anyopaque = @ptrCast(self);
-        const pages = getPages(@intFromPtr(buf));
-        std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE) catch return false; // TODO: does virtualfree reset protection itself?
-
         std.os.windows.VirtualFree(buf, 0, std.os.windows.MEM_RELEASE);
-        return true;
     }
 
     pub fn reserveChunk(self: *SharedExecutableBlock) ReserveChunkError!*Chunk {
