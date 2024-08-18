@@ -1,6 +1,7 @@
 const std = @import("std");
 const Disassembler = @import("dis_x86_64").Disassembler;
 const ChunkAllocator = @import("ChunkAllocator.zig");
+const mem = @import("mem.zig");
 
 const max_instruction_size = 15;
 pub const trampoline_buffer_size = (max_instruction_size * 2) + @sizeOf(JMP_ABS);
@@ -42,7 +43,7 @@ fn writeAbsoluteJump(address: [*]u8, destination: usize) void {
 
 pub const Error = error{
     UnavailableNearbyPage,
-} || ChunkAllocator.ReserveChunkError || Disassembler.Error || std.posix.MProtectError || std.os.windows.VirtualQueryError;
+} || ChunkAllocator.ReserveChunkError || Disassembler.Error || mem.MapError || std.posix.MProtectError || std.os.windows.VirtualQueryError;
 
 /// target function body must be at least 13 bytes large
 pub fn Hook(comptime T: type) type {

@@ -2,9 +2,11 @@ const std = @import("std");
 const trampoline_buffer_size = @import("root.zig").trampoline_buffer_size;
 const Allocator = @This();
 
+const mem = @import("mem.zig");
+
 pub const Chunk = [trampoline_buffer_size]u8;
 pub const ReserveChunkError = error{OutOfChunks};
-pub const AllocBlockError = std.os.windows.VirtualAllocError || std.posix.MProtectError || error{UnavailableNearbyPage};
+pub const AllocBlockError = mem.MapError || error{UnavailableNearbyPage};
 pub const Error = ReserveChunkError || AllocBlockError;
 /// type erased implementation
 ptr: *anyopaque,

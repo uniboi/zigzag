@@ -26,6 +26,15 @@ fn n_or_default_detour(n: c_int) callconv(.C) c_int {
     return 20;
 }
 
+pub fn _main() !void {
+    const fd = try std.fs.openFileAbsolute("/proc/sys/vm/mmap_min_addr", .{});
+    defer fd.close();
+
+    var buf: [16]u8 = .{0} ** 16;
+    const size = try fd.read(&buf);
+    std.debug.print("mmap_min_addr {d}\n", .{try std.fmt.parseInt(u64, buf[0 .. size - 1], 10)});
+}
+
 pub fn main() !void {
     var lib = try std.DynLib.open("./zig-out/bin/cExampleLib.dll");
     defer lib.close();
@@ -41,7 +50,7 @@ pub fn main() !void {
 
     // var tr: SharedBlocks = .{};
     // defer tr.deinit();
-    var pga: PageChunkAllocator = .{};
+    var pga = try PageChunkAllocator.init();
     defer pga.deinit();
     const chunk_allocator = pga.allocator();
 
