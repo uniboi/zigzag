@@ -12,9 +12,21 @@ pub const Protection = packed struct {
     fn flags(prot: Protection) u32 {
         // TODO: the compiler can't derive that comptime_int should resolve to u32 for some reason
         return switch (target) {
-            .windows => if (!prot.execute and !prot.write and !prot.read) @as(u32, windows.PAGE_NOACCESS) else if (prot.execute) @as(u32, windows.PAGE_EXECUTE) else 0 |
-                if (prot.write) @as(u32, windows.PAGE_READWRITE) else 0 |
-                if (prot.read and !prot.write) @as(u32, windows.PAGE_READONLY) else 0,
+            .windows => {
+                if (prot.execute and prot.write and prot.read) {
+                    return windows.PAGE_EXECUTE_READWRITE;
+                }
+
+                if (prot.write and prot.read) {
+                    return windows.PAGE_READWRITE;
+                }
+
+                if (prot.read) {
+                    return windows.PAGE_READONLY;
+                }
+
+                return windows.PAGE_NOACCESS;
+            },
             else => if (!prot.execute and !prot.write and !prot.read) @as(u32, PROT.NONE) else if (prot.execute) @as(u32, PROT.WRITE) else 0 |
                 if (prot.write) @as(u32, PROT.WRITE) else 0 |
                 if (prot.read) @as(u32, PROT.READ) else 0,
