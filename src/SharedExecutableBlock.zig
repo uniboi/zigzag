@@ -1,6 +1,7 @@
 const std = @import("std");
 const mem = @import("mem.zig");
 const builtin = @import("builtin");
+const kernel32 = @import("kernel32.zig");
 const memory_block_size = @import("PageChunkAllocator.zig").memory_block_size;
 const SharedExecutableBlock = @This();
 
@@ -28,7 +29,7 @@ pub fn cacheMinAddressAndGranularity() CacheMinAddressError!void {
     switch (builtin.os.tag) {
         .windows => {
             var system_info: std.os.windows.SYSTEM_INFO = undefined;
-            std.os.windows.kernel32.GetSystemInfo(&system_info);
+            kernel32.GetSystemInfo(&system_info);
             mmap_min_address = @intFromPtr(system_info.lpMinimumApplicationAddress);
             allocation_granularity = system_info.dwAllocationGranularity;
         },
