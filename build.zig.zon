@@ -19,6 +19,10 @@
             .url = "https://github.com/kubkon/zig-dis-x86_64/archive/5203b9affc5045e000ae7963d988e155e98e396d.tar.gz",
             .hash = "12207252f0592e53e8794d5a41409791d5c8c70e0de67bfba48844406619847cc971",
         },
+        .pmparse = .{
+            .url = "git+https://github.com/uniboi/pmparse/#abc4125700fa711dab691b694f39132b7cd4f824",
+            .hash = "1220bb1542fc658c91c89224f49743cd7a531dc6deda566ffc4c6237cbeabb627991",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally

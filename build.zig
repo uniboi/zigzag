@@ -7,6 +7,9 @@ pub fn build(b: *std.Build) void {
     const @"zig-dis-x86_64" = b.dependency("zig-dis-x86_64", .{ .target = target, .optimize = optimize });
     const dis_x86_64 = @"zig-dis-x86_64".module("dis_x86_64");
 
+    const pmparse_dep = b.dependency("pmparse", .{ .target = target, .optimize = optimize });
+    const pmparse = pmparse_dep.module("pmparse");
+
     const lib = b.addStaticLibrary(.{
         .name = "zigzag",
         .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/root.zig" } },
@@ -23,6 +26,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("dis_x86_64", dis_x86_64);
+    exe.root_module.addImport("pmparse", pmparse);
 
     b.installArtifact(exe);
 

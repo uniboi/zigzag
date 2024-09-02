@@ -22,9 +22,10 @@ var allocation_granularity: ?usize = switch (builtin.os.tag) {
 
 pub const CacheMinAddressError = switch (builtin.os.tag) {
     .windows => error{},
-    else => std.fs.FileOpenError | std.fmt.ParseIntError,
+    else => std.fs.File.OpenError || std.fs.File.ReadError || std.fmt.ParseIntError,
 };
 
+// TODO: Use std.once
 pub fn cacheMinAddressAndGranularity() CacheMinAddressError!void {
     switch (builtin.os.tag) {
         .windows => {
@@ -42,8 +43,8 @@ pub fn cacheMinAddressAndGranularity() CacheMinAddressError!void {
             const fd = try std.fs.openFileAbsolute("/proc/sys/vm/mmap_min_addr", .{});
             defer fd.close();
 
-            const size = fd.read(&buf);
-            mmap_min_address = try std.fmt.parseInt(buf[0 .. size - 1], 10);
+            const size = try fd.read(&buf);
+            mmap_min_address = try std.fmt.parseInt(usize, buf[0 .. size - 1], 10);
         },
     }
 }
@@ -74,10 +75,7 @@ head: Head,
 chunks: [chunk_amount]Chunk,
 
 pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
-    // const blob: *SharedExecutableBlock = @alignCast(@ptrCast(try std.os.windows.VirtualAlloc(@ptrFromInt(address), memory_block_size, std.os.windows.MEM_COMMIT | std.os.windows.MEM_RESERVE, std.os.windows.PAGE_EXECUTE_READWRITE)));
     const blob: *SharedExecutableBlock = @alignCast(@ptrCast(try mem.map(@ptrFromInt(address), memory_block_size, .{ .read = true, .write = true, .execute = true })));
-    // const pages = getPages(@intFromPtr(blob));
-    // try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
 
     if (builtin.mode == .Debug) {
         @memset(@as(*[memory_block_size]u8, @ptrCast(blob)), 0xCC);
@@ -85,17 +83,17 @@ pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
 
     blob.head.next = null;
     blob.head.reserved_chunks = ChunkState.initAllTo(0);
+    std.debug.print("chunks: {x}\n", .{@intFromPtr(&blob.chunks)});
     return blob;
 }
 
 pub fn initNearAddress(address: usize) AllocBlockError!*SharedExecutableBlock {
-    const region = try findPreviousFreeRegion(address) orelse return AllocBlockError.UnavailableNearbyPage;
+    // const region = try findPreviousFreeRegion(address) orelse return AllocBlockError.UnavailableNearbyPage;
+    const region = try mem.unmapped_area_near(address) orelse return AllocBlockError.UnavailableNearbyPage;
     return init(region);
 }
 
 pub fn deinit(self: *SharedExecutableBlock) void {
-    // const buf: *anyopaque = @ptrCast(self);
-    // std.os.windows.VirtualFree(buf, 0, std.os.windows.MEM_RELEASE);
     const buf: *[@sizeOf(SharedExecutableBlock)]u8 = @ptrCast(self);
     mem.unmap(@alignCast(buf));
 }

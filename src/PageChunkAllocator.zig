@@ -6,7 +6,6 @@ const ReserveChunkError = ChunkAllocator.ReserveChunkError;
 const AllocBlockError = ChunkAllocator.AllocBlockError;
 const Error = ChunkAllocator.Error;
 
-const mem = @import("mem.zig");
 const SharedExecutableBlock = @import("SharedExecutableBlock.zig");
 
 const Hook = @import("root.zig");
