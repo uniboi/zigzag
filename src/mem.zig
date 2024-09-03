@@ -149,8 +149,7 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
                     break;
                 }
 
-                // is this map in range?
-                if (vmap.end <= addr - max_memory_range or vmap.end >= addr + max_memory_range) {
+                if (vmap.end <= addr + max_memory_range) {
                     probe_address = vmap.end;
                 }
             }

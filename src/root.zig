@@ -34,7 +34,7 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             break;
         }
 
-        const ins_buf = source_bytes[last_pos .. disassembler.pos + 1];
+        const ins_buf = source_bytes[last_pos..disassembler.pos];
         const op = ins.encoding.data.opc[0];
 
         const written = written: {
