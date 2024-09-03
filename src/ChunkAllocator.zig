@@ -6,7 +6,7 @@ const mem = @import("mem.zig");
 
 pub const Chunk = [trampoline_buffer_size]u8;
 pub const ReserveChunkError = error{OutOfChunks};
-pub const AllocBlockError = mem.MapError || error{UnavailableNearbyPage} || mem.QueryError;
+pub const AllocBlockError = mem.MapError || error{UnavailableNearbyPage} || mem.QueryError || std.posix.MProtectError;
 pub const Error = ReserveChunkError || AllocBlockError;
 /// type erased implementation
 ptr: *anyopaque,

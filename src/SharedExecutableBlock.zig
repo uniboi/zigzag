@@ -13,6 +13,7 @@ const Error = ChunkAllocator.Error;
 
 const Hook = @import("root.zig");
 const trampoline_buffer_size = Hook.trampoline_buffer_size;
+const getPages = Hook.getPages;
 
 var mmap_min_address: ?usize = null;
 var allocation_granularity: ?usize = switch (builtin.os.tag) {
@@ -84,6 +85,10 @@ pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
     blob.head.next = null;
     blob.head.reserved_chunks = ChunkState.initAllTo(0);
     std.debug.print("chunks: {x}\n", .{@intFromPtr(&blob.chunks)});
+
+    const pages = getPages(@intFromPtr(blob));
+    try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
+
     return blob;
 }
 
