@@ -3,6 +3,8 @@ const zds = @import("dis_x86_64");
 const Disassembler = zds.Disassembler;
 const Operand = zds.Instruction.Operand;
 
+const pmparse = @import("pmparse");
+
 const zz = @import("root.zig");
 const Hook = zz.Hook;
 const TrampolineBuffer = zz.SharedExecutableBlock;
@@ -33,6 +35,16 @@ fn hello_detour() callconv(.C) void {
     std.debug.print("Hello World 2!\n", .{});
 }
 
+fn add2(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+fn add2_detour(a: i32, b: i32) i32 {
+    return a + b + 1;
+}
+
+const Add2Signature = fn (i32, i32) i32;
+
 pub fn main() !void {
     const lib_path = switch (target) {
         .windows => "./zig-out/bin/cExampleLib.dll",
@@ -46,14 +58,21 @@ pub fn main() !void {
     var lib = try std.DynLib.open(lib_path);
     defer lib.close();
 
-    const add = lib.lookup(*AddSignature, "add").?;
-    const add_hook = try Hook(AddSignature).init(chunk_allocator, add, add_detour);
-    defer _ = add_hook.deinit();
-    std.debug.print("delegate: {}\n", .{add_hook.delegate});
-    try std.testing.expect(add_hook.delegate(1, 2) == 3);
-    // try std.testing.expect(add(1, 2) == 4);
+    const hello = lib.lookup(*HelloSignature, "hello").?; // hol dir die hello world funktion
+    hello(); // "Hello World!"
 
-    // const hello = lib.lookup(*HelloSignature, "hello").?;
-    // const hello_hook = try Hook(HelloSignature).init(chunk_allocator, hello, &hello_detour);
-    // hello_hook.delegate();
+    // mach nen hook für die methode, dass "Hello World 2!" geprintet wird
+    const hello_hook = try Hook(HelloSignature).init(chunk_allocator, hello, hello_detour);
+    defer _ = hello_hook.deinit();
+
+    hello(); // "Hello World 2!"
+    hello_hook.delegate(); // "Hello World!" ("ursprüngliche" funktion)
+
+    // const add = lib.lookup(*AddSignature, "add").?;
+    // const add_hook = try Hook(AddSignature).init(chunk_allocator, add, add_detour);
+    // defer _ = add_hook.deinit();
+    // const r1 = add(1, 2);
+    // const r2 = add_hook.delegate(1, 2);
+    // try std.testing.expect(r1 == 4);
+    // try std.testing.expect(r2 == 3);
 }

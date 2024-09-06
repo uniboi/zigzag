@@ -27,6 +27,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("dis_x86_64", dis_x86_64);
     exe.root_module.addImport("pmparse", pmparse);
+    exe.linkLibC();
 
     b.installArtifact(exe);
 

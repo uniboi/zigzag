@@ -7,6 +7,7 @@ const mem = @import("mem.zig");
 const max_instruction_size = 15;
 pub const trampoline_buffer_size = (max_instruction_size * 2) + @sizeOf(JMP_ABS);
 
+// TODO: Move to mem
 pub fn getPages(target: usize) []align(std.mem.page_size) u8 {
     const pageAlignedPtr: [*]u8 = @ptrFromInt(std.mem.alignBackward(usize, target, std.mem.page_size));
     return @alignCast(pageAlignedPtr[0..std.mem.page_size]); // TODO: check if patched instructions cross page boundaries
@@ -17,13 +18,12 @@ const TrampolineWriteError = error{InsufficientBufferSize} || Disassembler.Error
 
 /// returns amount of copied bytes
 fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
+    const min_size = @sizeOf(JMP_ABS);
     const dest_bytes: [*]u8 = @ptrFromInt(dest);
     const source_bytes: [*]u8 = @ptrFromInt(source);
 
     var trampoline_buffer = std.io.fixedBufferStream(dest_bytes[0..trampoline_buffer_size]);
     const trampoline_writer = trampoline_buffer.writer();
-
-    const min_size = @sizeOf(JMP_ABS);
 
     var disassembler = Disassembler.init(source_bytes[0 .. min_size + max_instruction_size]);
 
@@ -34,103 +34,67 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             break;
         }
 
+        std.debug.assert(ins.encoding.data.opc.len > 0);
+        std.debug.print("{}\n", .{ins});
+
         const ins_buf = source_bytes[last_pos..disassembler.pos];
-        const op = ins.encoding.data.opc[0];
+        const opcode = ins.encoding.data.opc[0];
+        const cpy_ins_addr = dest + trampoline_buffer.pos;
+        const ins_addr = @intFromPtr(ins_buf.ptr);
 
-        const written = written: {
-            if (isAnyOpRip(ins.ops)) {
-                std.debug.print("RIP operand {}\n", .{ins});
-                @panic("todo");
-            } else if (op & 0xFD == 0xE9) {
-                std.debug.print("Relative call {}\n", .{ins});
-                @panic("todo");
-            } else if (op & 0xF0 == 0x70 or op & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80) {
-                std.debug.print("Relative JMP {}\n", .{ins});
+        if (ripOpIndex(ins.ops)) |op_index| {
+            // instruction contains a %rip operand
 
-                const diff: i32 = diff: {
-                    const source_instruction_address = source + disassembler.pos;
-                    const trampoline_instruction_address = dest + trampoline_buffer.pos;
+            const abs_ins_diff: isize = if (ins_addr > cpy_ins_addr) @intCast(ins_addr - cpy_ins_addr) else @as(isize, @intCast(cpy_ins_addr - ins_addr)) - 1;
+            const new_disp = abs_ins_diff + ins.ops[op_index].mem.rip.disp;
 
-                    if (applyOffset(trampoline_instruction_address, @intCast(ins.ops[0].imm.signed)) < trampoline_instruction_address + min_size) {
-                        std.debug.print("???\n", .{});
-                        break :diff ins.ops[0].imm.signed;
-                    }
+            const rip_dest = applyOffset(ins_addr, ins.ops[op_index].mem.rip.disp); // omitted instruction len because it's irrelevant for the calculation
+            const new_dest = applyOffset(cpy_ins_addr, new_disp);
+            std.debug.assert(rip_dest == new_dest);
 
-                    // const d = if (source_instruction_address > trampoline_instruction_address) source_instruction_address - trampoline_instruction_address else trampoline_instruction_address - source_instruction_address;
-                    const d: i32 = @intCast((source_instruction_address + @as(u32, @intCast(ins.ops[0].imm.signed))) - trampoline_instruction_address);
+            var cpy_ins = ins;
+            cpy_ins.ops[op_index].mem.rip.disp = @intCast(new_disp);
 
-                    std.debug.print("src: 0x{x}, dest: 0x{x}, rel: 0x{x}\n", .{ source_instruction_address, trampoline_instruction_address, applyOffset(trampoline_instruction_address, d) });
-                    std.debug.print("original rel: {x} {}\n", .{ source_instruction_address + @as(u32, @intCast(ins.ops[0].imm.signed)), d < std.math.maxInt(i32) });
-                    std.debug.print("diff: {}\n", .{d});
+            try cpy_ins.encode(trampoline_writer, .{});
+        } else if (opcode & 0xFD == 0xE8) {
+            // relative call
 
-                    break :diff d;
-                };
+            const diff: i32 = @intCast(mem.delta(ins_addr, cpy_ins_addr));
+            const new_disp = diff + ins.ops[0].imm.signed;
 
-                var modified_ins = ins;
-                modified_ins.ops[0].imm.signed = diff;
+            const original_dest = applyOffset(ins_addr, ins.ops[0].imm.signed);
+            const new_dest = applyOffset(cpy_ins_addr, new_disp);
+            std.debug.assert(original_dest == new_dest);
 
-                try modified_ins.encode(trampoline_writer, .{});
-                break :written ins_buf.len;
-            } else {
-                break :written try trampoline_writer.write(ins_buf);
-            }
-        };
+            var cpy_ins = ins;
+            cpy_ins.ops[0].imm.signed = new_disp;
 
-        if (written < ins_buf.len) {
-            return TrampolineWriteError.InsufficientBufferSize;
+            try cpy_ins.encode(trampoline_writer, .{});
+        } else if (opcode & 0xF0 == 0x70 or opcode & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80) {
+            // relative jump
+            @panic("todo: relative jmp");
+        } else {
+            // instruction without positional properties
+            // simply copy the exact instruction. No need to reencode
+            try trampoline_writer.writeAll(ins_buf);
         }
     }
-
-    // while (try disassembler.next()) |ins| {
-    //     if (last_pos >= min_size) {
-    //         break;
-    //     }
-
-    //     @memcpy(dest_bytes[last_pos..disassembler.pos], source_bytes[last_pos..disassembler.pos]);
-
-    //     const instruction_size = disassembler.pos - last_pos;
-    //     const old_instruction: usize = @intFromPtr(source_bytes) + last_pos;
-    //     const op = ins.encoding.data.opc[0];
-
-    //     _ = instruction_size;
-    //     _ = old_instruction;
-
-    //     if (isAnyOpRip(ins.ops)) {
-    //         std.debug.print("RIP operand {}\n", .{ins});
-    //     } else if (op == 0xE8) {
-    //         std.debug.print("Relative call {}\n", .{ins});
-    //     } else if (op & 0xFD == 0xE9) {
-    //         // relative jmp E8 or E9
-    //         std.debug.print("Relative JMP {}\n", .{ins});
-    //     } else if (op & 0xF0 == 0x70 or op & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80) {
-    //         std.debug.print("(relative jcc) {}\n", .{ins});
-    //         std.debug.print("ops: {any}\n", .{ins.ops});
-
-    //         // const jcc_dest: usize =
-    //         //     if (op & 0xF0 == 0x70 or op & 0xFC == 0xE0)
-    //         //     applyOffset(old_instruction + instruction_size, @intCast(ins.ops[0].imm.signed))
-    //         // else
-    //         //     old_instruction + instruction_size + ins.ops[0].imm.unsigned;
-
-    //         // const jcc_dest: usize = if (ins.ops[0].imm == .signed) applyOffset(old_instruction + instruction_size, @intCast(ins.ops[0].imm.signed)) else old_instruction + instruction_size + ins.ops[0].imm.unsigned;
-
-    //         // const jcc_dest: usize = old_instruction;
-
-    //         // if (dest <= jcc_dest and jcc_dest < dest + @sizeOf(JMP_REL) * 8) {
-    //         //     std.debug.print("op is in bounds\n", .{});
-    //         // } else {
-    //         //     std.debug.print("rip address is not in bounds {x} {x}:{x} ins size: {d}\n", .{ jcc_dest, dest, dest + @sizeOf(JMP_REL) * 8, instruction_size });
-    //         // }
-    //     }
-
-    //     last_pos = disassembler.pos;
-    // }
 
     return last_pos;
 }
 
 fn applyOffset(n: usize, offset: isize) usize {
     return if (offset < 0) n -| @as(usize, @intCast(-offset)) else n +| @as(usize, @intCast(offset));
+}
+
+fn ripOpIndex(ops: [4]dis.Instruction.Operand) ?usize {
+    for (ops, 0..) |op, i| {
+        if (op == .mem and op.mem == .rip) {
+            return i;
+        }
+    }
+
+    return null;
 }
 
 fn isAnyOpRip(ops: [4]dis.Instruction.Operand) bool {
@@ -170,7 +134,6 @@ pub fn Hook(comptime T: type) type {
             const trampoline_buffer = try chunk_allocator.alloc(target_address);
             const trampoline_size = try writeTrampolineBody(@intFromPtr(trampoline_buffer), target_address);
 
-            // writeAbsoluteJump(@ptrFromInt(@intFromPtr(trampoline_buffer) + trampoline_size));
             const jmp_to_resume: JMP_ABS = .{ .addr = target_address + trampoline_size };
             @memcpy(trampoline_buffer[trampoline_size .. trampoline_size + @sizeOf(JMP_ABS)], @as([*]const u8, @ptrCast(&jmp_to_resume)));
 

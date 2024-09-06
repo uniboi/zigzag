@@ -106,7 +106,9 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     allocation_granularity_once.call();
 
     // max range for seeking an unmapped area
-    const max_memory_range = 0x40000000;
+    // const max_memory_range = 0x40000000;
+    const max_memory_range = std.math.maxInt(i32) / 2;
+    std.debug.print("max range: {x}\n", .{max_memory_range});
 
     switch (target) {
         .windows => {
@@ -132,16 +134,23 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
         },
         else => {
             // FIXME: When Linux 6.11 is released, use ioctl interface for procmap queries
+            // Will also make this a lot easier
             const allocator = std.heap.page_allocator;
             const vmaps = try pmparse.ProcessMaps.init(allocator, null);
             defer vmaps.deinit();
-            var probe_address: ?usize = null;
-            while (try vmaps.next()) |vmap| {
+            var closest_valid_address: ?usize = null;
+            var last_mapped_address: usize = 0;
+            while (try vmaps.next()) |vmap| : (last_mapped_address = vmap.end) {
                 defer vmap.deinit(allocator);
 
-                if (probe_address != null and probe_address.? >= mmap_min_addr and probe_address.? < vmap.start and vmap.start - probe_address.? >= @sizeOf(SharedBlock)) {
-                    std.debug.print("unmapped area {?x}\n", .{probe_address});
-                    return probe_address;
+                if (closest_valid_address != null and closest_valid_address.? >= mmap_min_addr and closest_valid_address.? < vmap.start and vmap.start - closest_valid_address.? >= @sizeOf(SharedBlock)) {
+
+                    // HACK: Replace when 6.11 releases to properly iterate only over maps in the desired range
+                    if (last_mapped_address < addr) {
+                        return std.mem.alignBackward(usize, addr + std.mem.page_size, std.mem.page_size);
+                    }
+
+                    return closest_valid_address;
                 }
 
                 // all maps are out of range
@@ -150,11 +159,20 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
                 }
 
                 if (vmap.end <= addr + max_memory_range) {
-                    probe_address = vmap.end;
+                    if (closest_valid_address == null or delta(addr, vmap.end) < delta(addr, closest_valid_address.?)) {
+                        closest_valid_address = vmap.end;
+                    }
                 }
             }
 
             return null;
         },
     }
+}
+
+pub fn delta(a: usize, b: usize) usize {
+    return switch (a > b) {
+        true => a - b,
+        false => b - a,
+    };
 }
