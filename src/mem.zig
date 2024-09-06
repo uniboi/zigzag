@@ -105,10 +105,7 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
 
-    // max range for seeking an unmapped area
-    // const max_memory_range = 0x40000000;
     const max_memory_range = std.math.maxInt(i32) / 2;
-    std.debug.print("max range: {x}\n", .{max_memory_range});
 
     switch (target) {
         .windows => {
