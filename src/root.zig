@@ -56,23 +56,30 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             cpy_ins.ops[op_index].mem.rip.disp = @intCast(new_disp);
 
             try cpy_ins.encode(trampoline_writer, .{});
-        } else if (opcode & 0xFD == 0xE8) {
-            // relative call
+        } else if (opcode == 0xE8 or opcode == 0xE9) {
+            // TODO: verify that this works for 0xE9
+            // relative call / uncoditional jmp
 
             const diff: i32 = @intCast(mem.delta(ins_addr, cpy_ins_addr));
             const new_disp = diff + ins.ops[0].imm.signed;
 
             const original_dest = applyOffset(ins_addr, ins.ops[0].imm.signed);
-            const new_dest = applyOffset(cpy_ins_addr, new_disp);
-            std.debug.assert(original_dest == new_dest);
 
-            var cpy_ins = ins;
-            cpy_ins.ops[0].imm.signed = new_disp;
+            if (applyOffset(ins_addr, new_disp) > dest + min_size) {
+                const new_dest = applyOffset(cpy_ins_addr, new_disp);
+                std.debug.assert(original_dest == new_dest);
 
-            try cpy_ins.encode(trampoline_writer, .{});
+                var cpy_ins = ins;
+                cpy_ins.ops[0].imm.signed = new_disp;
+                try cpy_ins.encode(trampoline_writer, .{});
+            } else {
+                // copy an internal jump
+                try trampoline_writer.writeAll(ins_buf);
+            }
         } else if (opcode & 0xF0 == 0x70 or opcode & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80) {
-            // relative jump
-            @panic("todo: relative jmp");
+            // relative conditional jump
+
+            @panic("todo: relative conditional jmp");
         } else {
             // instruction without positional properties
             // simply copy the exact instruction. No need to reencode
