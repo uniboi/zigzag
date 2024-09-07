@@ -56,11 +56,9 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             cpy_ins.ops[op_index].mem.rip.disp = @intCast(new_disp);
 
             try cpy_ins.encode(trampoline_writer, .{});
-        } else if (
-        // call
-        opcode == 0xE8
-        // jmp
-        or opcode == 0xE9) {
+        } else if (opcode == 0xE8 or opcode == 0xE9 or
+            opcode & 0xF0 == 0x70 or opcode & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80)
+        {
             const diff: i32 = @intCast(mem.delta(ins_addr, cpy_ins_addr));
             const new_disp = diff + ins.ops[0].imm.signed;
 
@@ -77,18 +75,6 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
                 // copy an internal jump
                 try trampoline_writer.writeAll(ins_buf);
             }
-        } else if (opcode & 0xF0 == 0x70 or opcode & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80) {
-            // relative conditional jump
-            const diff: i32 = @intCast(mem.delta(ins_addr, cpy_ins_addr));
-            const new_disp = diff + ins.ops[0].imm.signed;
-
-            // FIXME: Handle edge cases like loops, intern jmps, etc.
-
-            var cpy_ins = ins;
-            cpy_ins.ops[0].imm.signed = new_disp;
-            try cpy_ins.encode(trampoline_writer, .{});
-
-            // @panic("todo: relative conditional jmp");
         } else {
             // instruction without positional properties
             // simply copy the exact instruction. No need to reencode
