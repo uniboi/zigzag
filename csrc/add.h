@@ -1,4 +1,4 @@
 int add(int a, int b);
-// int square(int n);
-// int n_or_default(int n);
+int square(int n);
+int n_or_default(int n);
 void hello();

@@ -35,7 +35,7 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
         }
 
         std.debug.assert(ins.encoding.data.opc.len > 0);
-        std.debug.print("{}\n", .{ins});
+        // std.debug.print("{}\n", .{ins});
 
         const ins_buf = source_bytes[last_pos..disassembler.pos];
         const opcode = ins.encoding.data.opc[0];
@@ -65,7 +65,7 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
 
             const original_dest = applyOffset(ins_addr, ins.ops[0].imm.signed);
 
-            if (applyOffset(ins_addr, new_disp) > dest + min_size) {
+            if (applyOffset(ins_addr, new_disp) + ins_buf.len > dest + min_size) {
                 const new_dest = applyOffset(cpy_ins_addr, new_disp);
                 std.debug.assert(original_dest == new_dest);
 
@@ -78,8 +78,16 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             }
         } else if (opcode & 0xF0 == 0x70 or opcode & 0xFC == 0xE0 or ins.encoding.data.opc[1] & 0xF0 == 0x80) {
             // relative conditional jump
+            const diff: i32 = @intCast(mem.delta(ins_addr, cpy_ins_addr));
+            const new_disp = diff + ins.ops[0].imm.signed;
 
-            @panic("todo: relative conditional jmp");
+            // FIXME: Handle edge cases like loops, intern jmps, etc.
+
+            var cpy_ins = ins;
+            cpy_ins.ops[0].imm.signed = new_disp;
+            try cpy_ins.encode(trampoline_writer, .{});
+
+            // @panic("todo: relative conditional jmp");
         } else {
             // instruction without positional properties
             // simply copy the exact instruction. No need to reencode

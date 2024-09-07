@@ -58,15 +58,14 @@ pub fn main() !void {
     var lib = try std.DynLib.open(lib_path);
     defer lib.close();
 
-    const hello = lib.lookup(*HelloSignature, "hello").?; // hol dir die hello world funktion
-    hello(); // "Hello World!"
+    const hello = lib.lookup(*HelloSignature, "hello").?;
+    hello();
 
-    // mach nen hook für die methode, dass "Hello World 2!" geprintet wird
     const hello_hook = try Hook(HelloSignature).init(chunk_allocator, hello, hello_detour);
     defer _ = hello_hook.deinit();
 
-    hello(); // "Hello World 2!"
-    hello_hook.delegate(); // "Hello World!" ("ursprüngliche" funktion)
+    hello();
+    hello_hook.delegate();
 
     // const add = lib.lookup(*AddSignature, "add").?;
     // const add_hook = try Hook(AddSignature).init(chunk_allocator, add, add_detour);
@@ -75,4 +74,16 @@ pub fn main() !void {
     // const r2 = add_hook.delegate(1, 2);
     // try std.testing.expect(r1 == 4);
     // try std.testing.expect(r2 == 3);
+
+    // const n_or_default = lib.lookup(*NOrDefaultSignature, "n_or_default").?;
+    // const n1 = n_or_default(1);
+    // const n_or_default_hook = try Hook(NOrDefaultSignature).init(chunk_allocator, n_or_default, n_or_default_detour);
+    // defer _ = n_or_default_hook.deinit();
+
+    // const n2 = n_or_default(0);
+    // const n3 = n_or_default_hook.delegate(0);
+
+    // try std.testing.expect(n1 == 1);
+    // try std.testing.expect(n2 == 20);
+    // try std.testing.expect(n3 == 10);
 }

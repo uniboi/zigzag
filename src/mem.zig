@@ -167,9 +167,9 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     }
 }
 
-pub fn delta(a: usize, b: usize) usize {
+pub fn delta(a: usize, b: usize) isize {
     return switch (a > b) {
-        true => a - b,
-        false => b - a,
+        true => @intCast(a - b),
+        false => @as(isize, @intCast(b - a)) * -1,
     };
 }
