@@ -92,7 +92,6 @@ pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
 }
 
 pub fn initNearAddress(address: usize) AllocBlockError!*SharedExecutableBlock {
-    // const region = try findPreviousFreeRegion(address) orelse return AllocBlockError.UnavailableNearbyPage;
     const region = try mem.unmapped_area_near(address) orelse return AllocBlockError.UnavailableNearbyPage;
     return init(region);
 }
@@ -121,40 +120,8 @@ pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *const Chunk) void {
     const chunks_addr = @intFromPtr(&self.chunks);
 
     std.debug.assert(chunk_addr >= chunks_addr);
-    std.debug.assert((chunk_addr - chunks_addr) < chunk_amount);
+    const chunk_index = (chunk_addr - chunks_addr) / @sizeOf(Chunk);
+    std.debug.assert(chunk_index < chunk_amount);
 
-    const index = chunk_addr - chunks_addr;
-    self.head.reserved_chunks.set(index, 0);
-}
-
-// TODO: search in address += 512mb
-fn findPreviousFreeRegion(address: usize) std.os.windows.VirtualQueryError!?usize {
-    const min_address = if (std.math.maxInt(i32) > address)
-        // @intFromPtr(system_info.lpMinimumApplicationAddress)
-        mmap_min_address.?
-    else
-        address - std.math.maxInt(i32);
-
-    var probe_address = address;
-
-    // TODO: this is from minhook, not quite sure if allat is required
-    probe_address -= probe_address % allocation_granularity.?;
-    probe_address -= allocation_granularity.?;
-
-    while (probe_address > min_address) {
-        var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
-        const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(std.os.windows.MEMORY_BASIC_INFORMATION));
-
-        if (info_size == 0) {
-            break;
-        }
-
-        if (memory_info.State == std.os.windows.MEM_FREE) {
-            return probe_address;
-        }
-
-        probe_address -= @intFromPtr(memory_info.AllocationBase) - allocation_granularity.?;
-    }
-
-    return null;
+    self.head.reserved_chunks.set(chunk_index, 0);
 }

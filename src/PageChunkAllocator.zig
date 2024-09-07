@@ -49,7 +49,7 @@ fn free(ctx: *anyopaque, ptr: *const Chunk) void {
     var current_block = self.first_block;
     while (current_block) |block| : (current_block = block.head.next) {
         const block_address = @intFromPtr(block);
-        if (ptr_address > block_address and ptr_address - block_address < memory_block_size) {
+        if (ptr_address > block_address and (ptr_address - block_address) / @sizeOf(Chunk) < memory_block_size) {
             block.releaseChunk(ptr);
             return;
         }

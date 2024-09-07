@@ -56,10 +56,11 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             cpy_ins.ops[op_index].mem.rip.disp = @intCast(new_disp);
 
             try cpy_ins.encode(trampoline_writer, .{});
-        } else if (opcode == 0xE8 or opcode == 0xE9) {
-            // TODO: verify that this works for 0xE9
-            // relative call / uncoditional jmp
-
+        } else if (
+        // call
+        opcode == 0xE8
+        // jmp
+        or opcode == 0xE9) {
             const diff: i32 = @intCast(mem.delta(ins_addr, cpy_ins_addr));
             const new_disp = diff + ins.ops[0].imm.signed;
 

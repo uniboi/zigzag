@@ -67,23 +67,23 @@ pub fn main() !void {
     hello();
     hello_hook.delegate();
 
-    // const add = lib.lookup(*AddSignature, "add").?;
-    // const add_hook = try Hook(AddSignature).init(chunk_allocator, add, add_detour);
-    // defer _ = add_hook.deinit();
-    // const r1 = add(1, 2);
-    // const r2 = add_hook.delegate(1, 2);
-    // try std.testing.expect(r1 == 4);
-    // try std.testing.expect(r2 == 3);
+    const add = lib.lookup(*AddSignature, "add").?;
+    const add_hook = try Hook(AddSignature).init(chunk_allocator, add, add_detour);
+    defer _ = add_hook.deinit();
+    const r1 = add(1, 2);
+    const r2 = add_hook.delegate(1, 2);
+    try std.testing.expect(r1 == 4);
+    try std.testing.expect(r2 == 3);
 
-    // const n_or_default = lib.lookup(*NOrDefaultSignature, "n_or_default").?;
-    // const n1 = n_or_default(1);
-    // const n_or_default_hook = try Hook(NOrDefaultSignature).init(chunk_allocator, n_or_default, n_or_default_detour);
-    // defer _ = n_or_default_hook.deinit();
+    const n_or_default = lib.lookup(*NOrDefaultSignature, "n_or_default").?;
+    const n1 = n_or_default(1);
+    const n_or_default_hook = try Hook(NOrDefaultSignature).init(chunk_allocator, n_or_default, n_or_default_detour);
+    defer _ = n_or_default_hook.deinit();
 
-    // const n2 = n_or_default(0);
-    // const n3 = n_or_default_hook.delegate(0);
+    const n2 = n_or_default(0);
+    const n3 = n_or_default_hook.delegate(0);
 
-    // try std.testing.expect(n1 == 1);
-    // try std.testing.expect(n2 == 20);
-    // try std.testing.expect(n3 == 10);
+    try std.testing.expect(n1 == 1);
+    try std.testing.expect(n2 == 20);
+    try std.testing.expect(n3 == 10);
 }
