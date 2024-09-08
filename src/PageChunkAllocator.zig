@@ -37,7 +37,9 @@ fn alloc(ctx: *anyopaque, origin: usize) Error!*Chunk {
         }
     }
 
+    const prev = self.first_block;
     self.first_block = try SharedExecutableBlock.initNearAddress(origin);
+    self.first_block.?.head.next = prev;
     const chunk = try self.first_block.?.reserveChunk();
     return chunk;
 }
