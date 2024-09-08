@@ -24,25 +24,24 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
 
-    const basic_example = b.addExecutable(.{
-        .name = "basic_example",
-        .root_source_file = b.path("examples/basic.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    basic_example.root_module.addImport("zigzag", zigzag);
-    const run_basic_example = b.addRunArtifact(basic_example);
-    const basic_example_step = b.step("example.basic", "Run a basic example");
-    basic_example_step.dependOn(&run_basic_example.step);
+    addExample(b, "basic", "Basic example how to (un-)install a hook", zigzag, target, optimize);
+    addExample(b, "logging", "Log calls to a function using hooks", zigzag, target, optimize);
+}
 
-    const logging_example = b.addExecutable(.{
-        .name = "logging_example",
-        .root_source_file = b.path("examples/logging.zig"),
+fn addExample(b: *std.Build, comptime name: []const u8, comptime description: []const u8, zigzag: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const example = b.addExecutable(.{
+        .name = name ++ "_example",
+        .root_source_file = b.path("examples/" ++ name ++ ".zig"),
         .target = target,
         .optimize = optimize,
     });
-    logging_example.root_module.addImport("zigzag", zigzag);
-    const run_logging_example = b.addRunArtifact(logging_example);
-    const logging_example_step = b.step("example.logging", "Run an example using hooks for call logs");
-    logging_example_step.dependOn(&run_logging_example.step);
+    example.root_module.addImport("zigzag", zigzag);
+
+    const run_example = b.addRunArtifact(example);
+    const run_example_step = b.step("example." ++ name, description ++ " (Build and run the example)");
+    run_example_step.dependOn(&run_example.step);
+
+    const build_example = b.addInstallArtifact(example, .{});
+    const build_example_step = b.step("example." ++ name ++ ":install", description ++ " (Only install the artifact)");
+    build_example_step.dependOn(&build_example.step);
 }

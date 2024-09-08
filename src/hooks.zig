@@ -42,6 +42,9 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
         const cpy_ins_addr = dest + trampoline_buffer.pos;
         const ins_addr = @intFromPtr(ins_buf.ptr);
 
+        // TODO: A relative instruction might be outside of the possible range.
+        // Return an error in these cases or refactor to rewrite relative instructions to be absolute
+
         if (ripOpIndex(ins.ops)) |op_index| {
             // instruction contains a %rip operand
 
@@ -112,8 +115,13 @@ pub const Error = error{
     UnavailableNearbyPage,
 } || ChunkAllocator.ReserveChunkError || Disassembler.Error || std.posix.MProtectError || TrampolineWriteError || ChunkAllocator.AllocBlockError;
 
-/// target function body must be at least 13 bytes large
+/// Create a type for a hook of the provided signature
 pub fn Hook(comptime T: type) type {
+    const signature_info = @typeInfo(T);
+    if (signature_info != .Fn) {
+        @compileError("Hooks can only be constructed for functions");
+    }
+
     return struct {
         const Self = @This();
 
@@ -123,6 +131,7 @@ pub fn Hook(comptime T: type) type {
         allocator: ChunkAllocator,
 
         /// Construct a hook to change all calls for `target` to `payload`
+        /// The `target` body should be at least 30 bytes large
         pub fn init(chunk_allocator: ChunkAllocator, target: *T, payload: *const T) Error!Self {
             const target_address = @intFromPtr(target);
             const target_bytes: [*]u8 = @ptrCast(target);
@@ -153,19 +162,26 @@ pub fn Hook(comptime T: type) type {
             };
         }
 
+        pub const DeinitError = error{
+            /// The hooked function could not be reverted back to it's original state because the write permission for the function could not be given
+            CannotRevertInstructions,
+            /// The permissions of the page could not be reverted to their original state
+            CannotRevertPermissions,
+        };
+
         /// revert patched instructions in the `target` body.
-        /// returns `false` if memory protections cannot be updated.
-        pub fn deinit(self: Self) bool {
+        /// returns null if successful
+        pub fn deinit(self: Self) ?DeinitError {
             self.allocator.free(@ptrCast(self.delegate));
 
             const pages = getPages(@intFromPtr(self.target));
 
-            std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC) catch return false;
+            std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC) catch return DeinitError.CannotRevertInstructions;
             const body: [*]u8 = @ptrCast(self.target);
             @memcpy(body, &self.replaced_instructions);
-            std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC) catch return false;
+            std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC) catch return DeinitError.CannotRevertPermissions;
 
-            return true;
+            return null;
         }
 
         fn initTrampoline() void {}
@@ -176,7 +192,7 @@ pub fn Hook(comptime T: type) type {
 const JMP_ABS = packed struct {
     op1: u8 = 0xFF,
     op2: u8 = 0x25,
-    dummy: u32 = 0x0,
+    data_offset: u32 = 0x0,
     addr: u64,
 };
 

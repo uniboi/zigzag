@@ -100,7 +100,6 @@ fn loadGranularity() void {
 var mmap_min_addr_once = std.once(loadMinAddr);
 var allocation_granularity_once = std.once(loadGranularity);
 
-/// ± 512
 pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
@@ -109,7 +108,7 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
 
     switch (target) {
         .windows => {
-            var probe_address: usize = addr - max_memory_range;
+            var probe_address: usize = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range;
 
             while (probe_address < addr + max_memory_range) {
                 var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
