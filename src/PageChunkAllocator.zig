@@ -8,7 +8,7 @@ const Error = ChunkAllocator.Error;
 
 const SharedExecutableBlock = @import("SharedExecutableBlock.zig");
 
-const Hook = @import("root.zig");
+const Hook = @import("hooks.zig");
 const trampoline_buffer_size = Hook.trampoline_buffer_size;
 const getPages = Hook.getPages;
 

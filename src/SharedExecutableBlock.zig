@@ -11,7 +11,7 @@ const ReserveChunkError = ChunkAllocator.ReserveChunkError;
 const AllocBlockError = ChunkAllocator.AllocBlockError;
 const Error = ChunkAllocator.Error;
 
-const Hook = @import("root.zig");
+const Hook = @import("hooks.zig");
 const trampoline_buffer_size = Hook.trampoline_buffer_size;
 const getPages = Hook.getPages;
 

@@ -8,7 +8,6 @@ const pmparse = @import("pmparse");
 const zz = @import("root.zig");
 const Hook = zz.Hook;
 const TrampolineBuffer = zz.SharedExecutableBlock;
-// const SharedBlocks = zz.SharedBlocks;
 const PageChunkAllocator = @import("PageChunkAllocator.zig");
 
 const AddSignature = fn (c_int, c_int) callconv(.C) c_int;
@@ -86,4 +85,14 @@ pub fn main() !void {
     try std.testing.expect(n1 == 1);
     try std.testing.expect(n2 == 20);
     try std.testing.expect(n3 == 10);
+
+    const nn1 = add2(1, 2);
+    const add2_hook = try Hook(Add2Signature).init(chunk_allocator, @constCast(&add2), add2_detour);
+    defer _ = add2_hook.deinit();
+
+    const nn2 = add2(1, 2);
+    const nn3 = add2_hook.delegate(1, 2);
+    try std.testing.expect(nn1 == 3);
+    try std.testing.expect(nn2 == 4);
+    try std.testing.expect(nn3 == 3);
 }

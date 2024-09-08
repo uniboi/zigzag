@@ -1,5 +1,5 @@
 const std = @import("std");
-const trampoline_buffer_size = @import("root.zig").trampoline_buffer_size;
+const trampoline_buffer_size = @import("hooks.zig").trampoline_buffer_size;
 const Allocator = @This();
 
 const mem = @import("mem.zig");
