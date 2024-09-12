@@ -49,14 +49,14 @@ fn writeTrampolineBody(dest: usize, source: usize) TrampolineWriteError!usize {
             // instruction contains a %rip operand
 
             const abs_ins_diff: isize = if (ins_addr > cpy_ins_addr) @intCast(ins_addr - cpy_ins_addr) else @as(isize, @intCast(cpy_ins_addr - ins_addr)) - 1;
-            const new_disp = abs_ins_diff + ins.ops[op_index].mem.rip.disp;
+            const new_disp = abs_ins_diff + ins.ops[op_index].mem.m_rip.disp;
 
-            const rip_dest = applyOffset(ins_addr, ins.ops[op_index].mem.rip.disp); // omitted instruction len because it's irrelevant for the calculation
+            const rip_dest = applyOffset(ins_addr, ins.ops[op_index].mem.m_rip.disp); // omitted instruction len because it's irrelevant for the calculation
             const new_dest = applyOffset(cpy_ins_addr, new_disp);
             std.debug.assert(rip_dest == new_dest);
 
             var cpy_ins = ins;
-            cpy_ins.ops[op_index].mem.rip.disp = @intCast(new_disp);
+            cpy_ins.ops[op_index].mem.m_rip.disp = @intCast(new_disp);
 
             try cpy_ins.encode(trampoline_writer, .{});
         } else if (opcode == 0xE8 or opcode == 0xE9 or
@@ -94,7 +94,7 @@ fn applyOffset(n: usize, offset: isize) usize {
 
 fn ripOpIndex(ops: [4]dis.Instruction.Operand) ?usize {
     for (ops, 0..) |op, i| {
-        if (op == .mem and op.mem == .rip) {
+        if (op == .mem and op.mem == .m_rip) {
             return i;
         }
     }
@@ -103,7 +103,7 @@ fn ripOpIndex(ops: [4]dis.Instruction.Operand) ?usize {
 }
 
 fn isAnyOpRip(ops: [4]dis.Instruction.Operand) bool {
-    return (ops[0] == .mem and ops[0].mem == .rip) or (ops[1] == .mem and ops[1].mem == .rip) or (ops[2] == .mem and ops[2].mem == .rip) or (ops[3] == .mem and ops[3].mem == .rip);
+    return (ops[0] == .mem and ops[0].mem == .m_rip) or (ops[1] == .mem and ops[1].mem == .m_rip) or (ops[2] == .mem and ops[2].mem == .m_rip) or (ops[3] == .mem and ops[3].mem == .m_rip);
 }
 
 fn writeAbsoluteJump(address: [*]u8, destination: usize) void {
@@ -118,7 +118,7 @@ pub const Error = error{
 /// Create a type for a hook of the provided signature
 pub fn Hook(comptime T: type) type {
     const signature_info = @typeInfo(T);
-    if (signature_info != .Fn) {
+    if (signature_info != .@"fn") {
         @compileError("Hooks can only be constructed for functions");
     }
 

@@ -5,8 +5,8 @@
 
     .dependencies = .{
         .@"zig-dis-x86_64" = .{
-            .url = "https://github.com/kubkon/zig-dis-x86_64/archive/5203b9affc5045e000ae7963d988e155e98e396d.tar.gz",
-            .hash = "12207252f0592e53e8794d5a41409791d5c8c70e0de67bfba48844406619847cc971",
+            .url = "git+https://github.com/kubkon/zig-dis-x86_64/#53b2e2dae9e824d7b4994e767c2cbb4f39e443a9",
+            .hash = "1220f2b9588352067d5b6f3b68d5461cea52f4425c9144f6757db775cf2f19cb5d26",
         },
         .pmparse = .{
             .url = "git+https://github.com/uniboi/pmparse/#abc4125700fa711dab691b694f39132b7cd4f824",
