@@ -4,8 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const @"zig-dis-x86_64" = b.dependency("zig-dis-x86_64", .{ .target = target, .optimize = optimize });
-    const dis_x86_64 = @"zig-dis-x86_64".module("dis_x86_64");
+    const zig_dis_x86_64 = b.dependency("zig_dis_x86_64", .{ .target = target, .optimize = optimize });
+    const dis_x86_64 = zig_dis_x86_64.module("dis_x86_64");
 
     const pmparse_dep = b.dependency("pmparse", .{ .target = target, .optimize = optimize });
     const pmparse = pmparse_dep.module("pmparse");

@@ -8,9 +8,9 @@ const max_instruction_size = 15;
 pub const trampoline_buffer_size = (max_instruction_size * 2) + @sizeOf(JMP_ABS);
 
 // TODO: Move to mem
-pub fn getPages(target: usize) []align(std.mem.page_size) u8 {
-    const pageAlignedPtr: [*]u8 = @ptrFromInt(std.mem.alignBackward(usize, target, std.mem.page_size));
-    return @alignCast(pageAlignedPtr[0..std.mem.page_size]); // TODO: check if patched instructions cross page boundaries
+pub fn getPages(target: usize) []align(std.heap.page_size_min) u8 {
+    const pageAlignedPtr: [*]u8 = @ptrFromInt(std.mem.alignBackward(usize, target, std.heap.page_size_min));
+    return @alignCast(pageAlignedPtr[0..std.heap.page_size_min]); // TODO: check if patched instructions cross page boundaries
 }
 
 const TrampolineBuffer = std.io.FixedBufferStream([]u8);

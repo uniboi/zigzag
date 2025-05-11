@@ -1,7 +1,6 @@
 const std = @import("std");
 const windows = std.os.windows;
 const PROT = std.posix.PROT;
-const page_size = std.mem.page_size;
 const target = @import("builtin").os.tag;
 const pmparse = switch (target) {
     .windows => void,
@@ -35,7 +34,7 @@ pub const Protection = packed struct {
             },
             else => if (!prot.execute and !prot.write and !prot.read) @as(u32, PROT.NONE) else if (prot.execute) @as(u32, PROT.WRITE) else 0 |
                 if (prot.write) @as(u32, PROT.WRITE) else 0 |
-                if (prot.read) @as(u32, PROT.READ) else 0,
+                    if (prot.read) @as(u32, PROT.READ) else 0,
         };
     }
 };
@@ -50,14 +49,14 @@ pub const QueryError = switch (target) {
     else => pmparse.ProcessMaps.InitError || pmparse.ProcessMaps.ParseError,
 };
 
-pub fn map(addr: ?*anyopaque, size: usize, prot: Protection) MapError![]align(page_size) u8 {
+pub fn map(addr: ?*anyopaque, size: usize, prot: Protection) MapError![]align(std.heap.page_size_min) u8 {
     return switch (target) {
         .windows => @alignCast(@as([*]u8, @ptrCast(try windows.VirtualAlloc(addr, size, windows.MEM_COMMIT | windows.MEM_RESERVE, prot.flags())))[0..size]),
         else => std.posix.mmap(@alignCast(@ptrCast(addr)), size, prot.flags(), .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0),
     };
 }
 
-pub fn unmap(mem: []align(page_size) u8) void {
+pub fn unmap(mem: []align(std.heap.page_size_min) u8) void {
     return switch (target) {
         .windows => windows.VirtualFree(mem.ptr, 0, windows.MEM_RELEASE),
         else => std.posix.munmap(mem),
@@ -93,7 +92,7 @@ fn loadGranularity() void {
             kernel32.GetSystemInfo(&system_info);
             allocation_granularity = system_info.dwAllocationGranularity;
         },
-        else => allocation_granularity = std.mem.page_size,
+        else => allocation_granularity = std.heap.page_size_min,
     }
 }
 
@@ -143,7 +142,7 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
 
                     // HACK: Replace when 6.11 releases to properly iterate only over maps in the desired range
                     if (last_mapped_address < addr) {
-                        return std.mem.alignBackward(usize, addr + std.mem.page_size, std.mem.page_size);
+                        return std.mem.alignBackward(usize, addr + std.heap.page_size_min, std.heap.page_size_min);
                     }
 
                     return closest_valid_address;

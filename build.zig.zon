@@ -1,19 +1,18 @@
 .{
-    .name = "zigzag",
+    .name = .zigzag,
     .version = "0.0.1",
-    .minimum_zig_version = "0.13.0",
-
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{
-        .@"zig-dis-x86_64" = .{
-            .url = "git+https://github.com/kubkon/zig-dis-x86_64/#53b2e2dae9e824d7b4994e767c2cbb4f39e443a9",
-            .hash = "1220f2b9588352067d5b6f3b68d5461cea52f4425c9144f6757db775cf2f19cb5d26",
+        .zig_dis_x86_64 = .{
+            .url = "git+https://github.com/kubkon/zig-dis-x86_64/#48c399d7f9d879f46a69d4a06af3fa0699286ba5",
+            .hash = "zig_dis_x86_64-0.0.1-bnhOUXf6AwDf1MpMgHZImLwqhFbUp2Fl_MoxhtPEeo4N",
         },
         .pmparse = .{
-            .url = "git+https://github.com/uniboi/pmparse/#abc4125700fa711dab691b694f39132b7cd4f824",
-            .hash = "1220bb1542fc658c91c89224f49743cd7a531dc6deda566ffc4c6237cbeabb627991",
-            .lazy = false, // TODO: only required for linux builds
+            .url = "git+https://github.com/uniboi/pmparse/#684d24383aff29e1d20270511aa13fab0b5de0a2",
+            .hash = "pmparse-1.0.0-comPGxAfAACLIfaUi22iZhKJLhLZ55soRhI5Aii9SoBT",
         },
     },
+    .fingerprint = 0xdffe16191643a2c2,
     .paths = .{
         "src",
         "examples",

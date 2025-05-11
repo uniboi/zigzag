@@ -52,7 +52,8 @@ pub fn cacheMinAddressAndGranularity() CacheMinAddressError!void {
 
 const chunk_amount = n: {
     const n = (memory_block_size - @sizeOf(?*SharedExecutableBlock)) / (@sizeOf(Chunk) + (1 / 8));
-    if (n + @sizeOf(std.PackedIntArray(u1, n)) > memory_block_size) {
+    // if (n + @sizeOf(std.PackedIntArray(u1, n)) > memory_block_size) {
+    if (n + @sizeOf(std.bit_set.StaticBitSet(n)) > memory_block_size) {
         break :n n - @sizeOf(Chunk);
     }
 
@@ -61,7 +62,8 @@ const chunk_amount = n: {
 
 const InitNearbyError = error{UnavailableNearbyPage};
 
-const ChunkState = std.PackedIntArray(u1, chunk_amount);
+// const ChunkState = std.PackedIntArray(u1, chunk_amount);
+const ChunkState = std.bit_set.StaticBitSet(chunk_amount);
 
 comptime {
     std.debug.assert(@sizeOf(SharedExecutableBlock) <= memory_block_size);
@@ -83,7 +85,8 @@ pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
     }
 
     blob.head.next = null;
-    blob.head.reserved_chunks = ChunkState.initAllTo(0);
+    // blob.head.reserved_chunks = ChunkState.initAllTo(0);
+    blob.head.reserved_chunks = ChunkState.initEmpty();
 
     const pages = getPages(@intFromPtr(blob));
     try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
@@ -103,11 +106,11 @@ pub fn deinit(self: *SharedExecutableBlock) void {
 
 pub fn reserveChunk(self: *SharedExecutableBlock) ReserveChunkError!*Chunk {
     for (0..chunk_amount) |i| {
-        if (self.head.reserved_chunks.get(i) == 1) {
+        if (self.head.reserved_chunks.isSet(i)) {
             continue;
         }
 
-        self.head.reserved_chunks.set(i, 1);
+        self.head.reserved_chunks.set(i);
         return @ptrFromInt(@intFromPtr(&self.chunks) + (i * trampoline_buffer_size));
     }
 
@@ -123,5 +126,5 @@ pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *const Chunk) void {
     const chunk_index = (chunk_addr - chunks_addr) / @sizeOf(Chunk);
     std.debug.assert(chunk_index < chunk_amount);
 
-    self.head.reserved_chunks.set(chunk_index, 0);
+    self.head.reserved_chunks.unset(chunk_index);
 }
