@@ -7,12 +7,8 @@ pub fn build(b: *std.Build) void {
     const zig_dis_x86_64 = b.dependency("zig_dis_x86_64", .{ .target = target, .optimize = optimize });
     const dis_x86_64 = zig_dis_x86_64.module("dis_x86_64");
 
-    const pmparse_dep = b.dependency("pmparse", .{ .target = target, .optimize = optimize });
-    const pmparse = pmparse_dep.module("pmparse");
-
     const zigzag = b.addModule("zigzag", .{ .root_source_file = b.path("src/root.zig") });
     zigzag.addImport("dis_x86_64", dis_x86_64);
-    zigzag.addImport("pmparse", pmparse);
 
     const lib_unit_tests = b.addTest(.{
         .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/root.zig" } },

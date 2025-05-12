@@ -2,12 +2,12 @@ const std = @import("std");
 const windows = std.os.windows;
 const PROT = std.posix.PROT;
 const target = @import("builtin").os.tag;
-const pmparse = switch (target) {
-    .windows => void,
-    else => @import("pmparse"),
-};
 const kernel32 = @import("kernel32.zig");
 const SharedBlock = @import("SharedExecutableBlock.zig");
+const procmap = switch (target) {
+    .windows => void,
+    else => @import("procmap.zig"),
+};
 
 pub const Protection = packed struct {
     execute: bool = false,
@@ -42,11 +42,6 @@ pub const Protection = packed struct {
 pub const MapError = switch (target) {
     .windows => windows.VirtualAllocError,
     else => std.posix.MMapError,
-};
-
-pub const QueryError = switch (target) {
-    .windows => windows.VirtualQueryError,
-    else => pmparse.ProcessMaps.InitError || pmparse.ProcessMaps.ParseError,
 };
 
 pub fn map(addr: ?*anyopaque, size: usize, prot: Protection) MapError![]align(std.heap.page_size_min) u8 {
@@ -99,6 +94,11 @@ fn loadGranularity() void {
 var mmap_min_addr_once = std.once(loadMinAddr);
 var allocation_granularity_once = std.once(loadGranularity);
 
+pub const QueryError = switch (target) {
+    .windows => windows.VirtualQueryError,
+    else => procmap.ProcmapQuery.QueryError,
+};
+
 pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
@@ -128,39 +128,30 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
             return null;
         },
         else => {
-            // FIXME: When Linux 6.11 is released, use ioctl interface for procmap queries
-            // Will also make this a lot easier
-            const allocator = std.heap.page_allocator;
-            const vmaps = try pmparse.ProcessMaps.init(allocator, null);
-            defer vmaps.deinit();
-            var closest_valid_address: ?usize = null;
-            var last_mapped_address: usize = 0;
-            while (try vmaps.next()) |vmap| : (last_mapped_address = vmap.end) {
-                defer vmap.deinit(allocator);
+            var q: procmap.ProcmapQuery = .{
+                .query_addr = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range + std.heap.page_size_min,
+                .query_flags = .{ .vma_readable = true, .covering_or_next_vma = true },
+            };
 
-                if (closest_valid_address != null and closest_valid_address.? >= mmap_min_addr and closest_valid_address.? < vmap.start and vmap.start - closest_valid_address.? >= @sizeOf(SharedBlock)) {
-
-                    // HACK: Replace when 6.11 releases to properly iterate only over maps in the desired range
-                    if (last_mapped_address < addr) {
-                        return std.mem.alignBackward(usize, addr + std.heap.page_size_min, std.heap.page_size_min);
-                    }
-
-                    return closest_valid_address;
+            q.query() catch |err| {
+                switch (err) {
+                    procmap.ProcmapQuery.QueryError.NotFound => return null,
+                    else => return err,
                 }
+            };
 
-                // all maps are out of range
-                if (vmap.end > addr + max_memory_range) {
-                    break;
+            while (q.vma_start < q.query_addr) : (q.query() catch |err| {
+                switch (err) {
+                    procmap.ProcmapQuery.QueryError.NotFound => return null,
+                    else => return err,
                 }
-
-                if (vmap.end <= addr + max_memory_range) {
-                    if (closest_valid_address == null or delta(addr, vmap.end) < delta(addr, closest_valid_address.?)) {
-                        closest_valid_address = vmap.end;
-                    }
-                }
+            }) {
+                if (q.vma_start >= addr + max_memory_range or q.vma_end > addr + max_memory_range)
+                    return null;
+                q.query_addr = q.vma_end;
             }
 
-            return null;
+            return q.vma_end;
         },
     }
 }

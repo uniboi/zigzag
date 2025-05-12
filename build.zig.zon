@@ -7,10 +7,6 @@
             .url = "git+https://github.com/kubkon/zig-dis-x86_64/#48c399d7f9d879f46a69d4a06af3fa0699286ba5",
             .hash = "zig_dis_x86_64-0.0.1-bnhOUXf6AwDf1MpMgHZImLwqhFbUp2Fl_MoxhtPEeo4N",
         },
-        .pmparse = .{
-            .url = "git+https://github.com/uniboi/pmparse/#684d24383aff29e1d20270511aa13fab0b5de0a2",
-            .hash = "pmparse-1.0.0-comPGxAfAACLIfaUi22iZhKJLhLZ55soRhI5Aii9SoBT",
-        },
     },
     .fingerprint = 0xdffe16191643a2c2,
     .paths = .{

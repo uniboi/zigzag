@@ -3,8 +3,6 @@ const zds = @import("dis_x86_64");
 const Disassembler = zds.Disassembler;
 const Operand = zds.Instruction.Operand;
 
-const pmparse = @import("pmparse");
-
 const zz = @import("root.zig");
 const Hook = zz.Hook;
 const TrampolineBuffer = zz.SharedExecutableBlock;
