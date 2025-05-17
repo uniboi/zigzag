@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .zig_dis_x86_64 = .{
-            .url = "git+https://github.com/kubkon/zig-dis-x86_64/#48c399d7f9d879f46a69d4a06af3fa0699286ba5",
-            .hash = "zig_dis_x86_64-0.0.1-bnhOUXf6AwDf1MpMgHZImLwqhFbUp2Fl_MoxhtPEeo4N",
+            .url = "git+https://github.com/uniboi/zig-dis-x86_64/#991f2da2b0f75d1ae9fb9010f7aca288d447312a",
+            .hash = "zig_dis_x86_64-0.0.1-bnhOUbj7AwBCUgc_kbYoTNxh4DRLHKAdDUIPO3xhMr3p",
         },
     },
     .fingerprint = 0xdffe16191643a2c2,
