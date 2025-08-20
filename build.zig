@@ -22,18 +22,19 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
 
-    addExample(b, "basic", "Basic example how to (un-)install a hook", zigzag, target, optimize);
-    addExample(b, "logging", "Log calls to a function using hooks", zigzag, target, optimize);
+    addExample(b, "basic", "Basic example how to (un-)install a hook", zigzag, target);
+    addExample(b, "logging", "Log calls to a function using hooks", zigzag, target);
 }
 
-fn addExample(b: *std.Build, comptime name: []const u8, comptime description: []const u8, zigzag: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+fn addExample(b: *std.Build, comptime name: []const u8, comptime description: []const u8, zigzag: *std.Build.Module, target: std.Build.ResolvedTarget)void {
     const example = b.addExecutable(.{
         .name = name ++ "_example",
-        .root_source_file = b.path("examples/" ++ name ++ ".zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/" ++ name ++ ".zig"),
+            .target = target,
+            .imports = &.{.{ .name = "zigzag", .module = zigzag }},
+        }),
     });
-    example.root_module.addImport("zigzag", zigzag);
 
     const run_example = b.addRunArtifact(example);
     const run_example_step = b.step("example." ++ name, description ++ " (Build and run the example)");
