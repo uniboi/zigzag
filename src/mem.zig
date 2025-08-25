@@ -132,41 +132,33 @@ pub fn protect(mem: []align(std.heap.page_size_min) u8, prot: Protection) Protec
 }
 
 var mmap_min_addr: usize = undefined;
-var allocation_granularity: usize = undefined;
+var allocation_granularity: usize = undefined; // windows only
+var page_size: usize = undefined;
 
-fn loadMinAddr() void {
-    switch (target) {
+fn loadMemStats() void {
+    switch(target) {
         .windows => {
             var system_info: std.os.windows.SYSTEM_INFO = undefined;
             kernel32.GetSystemInfo(&system_info);
             mmap_min_addr = @intFromPtr(system_info.lpMinimumApplicationAddress);
+            allocation_granularity = system_info.dwAllocationGranularity;
         },
-        else => {
+        .linux => {
             const min_addr_path = "/proc/sys/vm/mmap_min_addr";
-            var buf: [16]u8 = .{0} ** 16;
+            var buf: [32]u8 = @splat(0);
             const fd = std.fs.openFileAbsolute(min_addr_path, .{}) catch @panic("cannot open " ++ min_addr_path);
             defer fd.close();
 
             const size = fd.read(&buf) catch @panic("cannot read " ++ min_addr_path);
             mmap_min_addr = std.fmt.parseInt(usize, buf[0 .. size - 1], 10) catch @panic("could not parse " ++ min_addr_path);
+            // allocation_granularity = std.heap.pageSize();
+            page_size = std.heap.pageSize();
         },
-    }
-}
-
-fn loadGranularity() void {
-    switch (target) {
-        .windows => {
-            var system_info: std.os.windows.SYSTEM_INFO = undefined;
-            kernel32.GetSystemInfo(&system_info);
-            allocation_granularity = system_info.dwAllocationGranularity;
-        },
-        .linux => allocation_granularity = std.heap.pageSize(),
         else => unreachable,
     }
 }
 
-var mmap_min_addr_once = std.once(loadMinAddr);
-var allocation_granularity_once = std.once(loadGranularity);
+var mem_stats_once = std.once(loadMemStats);
 
 pub const Range = struct {
     /// inclusive
@@ -263,8 +255,8 @@ fn findUnmappedAreaWithinLinux(bounds: Range, gap_size: usize) QueryError!?usize
         }
 
         // we found a gap between VMAs
-        if (q.vma_start > q.query_addr and try vmaGapSize(std.mem.alignBackward(usize, q.query_addr, allocation_granularity)) >= gap_size) {
-            return std.mem.alignBackward(usize, q.query_addr, allocation_granularity);
+        if (q.vma_start > q.query_addr and try vmaGapSize(std.mem.alignBackward(usize, q.query_addr, page_size)) >= gap_size) {
+            return std.mem.alignBackward(usize, q.query_addr, page_size);
         }
 
         q.query_addr = q.vma_end;
@@ -300,9 +292,7 @@ fn findUnmappedAreaWithinWindows(bounds: Range, gap_size: usize) QueryError!?usi
 /// bounds: min & max address where we're looking for an unallocated vma
 /// size: minimum size of the vma required
 pub fn findUnmappedAreaWithin(bounds: Range, size: usize) QueryError!?usize {
-    mmap_min_addr_once.call();
-    allocation_granularity_once.call();
-
+    mem_stats_once.call();
     return switch (target) {
         .windows => findUnmappedAreaWithinWindows(bounds, size),
         .linux => findUnmappedAreaWithinLinux(bounds, size),
