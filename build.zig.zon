@@ -1,7 +1,7 @@
 .{
     .name = .zigzag,
     .version = "0.0.1",
-    .minimum_zig_version = "0.15.0-dev.1599+cf90a5e45",
+    .minimum_zig_version = "0.16.0-dev.27+83f773fc6",
     .dependencies = .{
         .zig_dis_x86_64 = .{
             .url = "git+https://github.com/uniboi/zig-dis-x86_64/#5c57c8b922d15d57c0addb42ca8f0eadb5776fe0",

@@ -15,7 +15,6 @@ pub const Protection = packed struct {
     read: bool = false,
 
     fn flags(prot: Protection) u32 {
-        // TODO: the compiler can't derive that comptime_int should resolve to u32 for some reason
         return switch (target) {
             .windows => {
                 if (prot.execute and prot.write and prot.read) {
@@ -47,7 +46,7 @@ pub const MapError = switch (target) {
 pub fn map(addr: ?*anyopaque, size: usize, prot: Protection) MapError![]align(std.heap.page_size_min) u8 {
     return switch (target) {
         .windows => @alignCast(@as([*]u8, @ptrCast(try windows.VirtualAlloc(addr, size, windows.MEM_COMMIT | windows.MEM_RESERVE, prot.flags())))[0..size]),
-        else => std.posix.mmap(@alignCast(@ptrCast(addr)), size, prot.flags(), .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0),
+        else => std.posix.mmap(@ptrCast(@alignCast(addr)), size, prot.flags(), .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0),
     };
 }
 
@@ -87,73 +86,101 @@ fn loadGranularity() void {
             kernel32.GetSystemInfo(&system_info);
             allocation_granularity = system_info.dwAllocationGranularity;
         },
-        else => allocation_granularity = std.heap.page_size_min,
+        .linux => allocation_granularity = std.heap.pageSize(),
+        else => unreachable,
     }
 }
 
 var mmap_min_addr_once = std.once(loadMinAddr);
 var allocation_granularity_once = std.once(loadGranularity);
+const max_memory_range = std.math.maxInt(i32) / 2;
+
+const Range = struct {
+    from: usize,
+    to: usize,
+
+    // Calculate max and min possible addresses for the trampoline relative to the target address
+    pub fn rip(addr: usize) Range {
+        const to = b: {
+            if(addr > std.math.maxInt(usize) - std.math.maxInt(i32)) break :b std.math.maxInt(usize);
+            break :b addr + std.math.maxInt(i32);
+        };
+
+        if(addr < std.math.maxInt(i32) + 1) {
+            return .{
+                .from = mmap_min_addr,
+                .to = to,
+            };
+        }
+
+        const from: usize = addr - std.math.minInt(u32) / 2;
+        return .{
+            .from = if(from < mmap_min_addr) mmap_min_addr else from,
+            .to = to,
+        };
+    }
+};
 
 pub const QueryError = switch (target) {
     .windows => windows.VirtualQueryError,
-    else => procmap.ProcmapQuery.QueryError,
+    .linux => procmap.ProcmapQuery.QueryError,
+    else => unreachable,
 };
+
+fn findUnmappedAddressWithinLinux(bounds: Range) QueryError!?usize {
+    var q: procmap.ProcmapQuery = .{
+        .query_addr = bounds.from,
+        .query_flags = .{ .covering_or_next_vma = true },
+    };
+
+    try q.query();
+    while(q.vma_end <= bounds.to) {
+        if(q.vma_start > q.query_addr) {
+            return q.query_addr - (q.query_addr % allocation_granularity);
+        }
+
+        q.query_addr = q.vma_end;
+        q.query() catch |e| switch(e) {
+            error.NotFound => return q.query_addr - (q.query_addr % allocation_granularity),
+            else => return e,
+        };
+    }
+
+    return null;
+}
+
+fn findUnmappedAreaNearAddressWindows(addr: usize) QueryError!?usize {
+    var probe_address: usize = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range;
+
+    while (probe_address < addr + max_memory_range) {
+        var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
+        const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(std.os.windows.MEMORY_BASIC_INFORMATION));
+
+        if (info_size == 0) {
+            break;
+        }
+
+        if (memory_info.State == std.os.windows.MEM_FREE) {
+            return probe_address;
+        }
+
+        probe_address += @intFromPtr(memory_info.AllocationBase) - 1;
+        probe_address -= probe_address % allocation_granularity;
+    }
+
+    return null;
+}
 
 pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
+    const bounds: Range = .rip(addr);
 
-    const max_memory_range = std.math.maxInt(i32) / 2;
-
-    switch (target) {
-        .windows => {
-            var probe_address: usize = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range;
-
-            while (probe_address < addr + max_memory_range) {
-                var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
-                const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(std.os.windows.MEMORY_BASIC_INFORMATION));
-
-                if (info_size == 0) {
-                    break;
-                }
-
-                if (memory_info.State == std.os.windows.MEM_FREE) {
-                    return probe_address;
-                }
-
-                probe_address += @intFromPtr(memory_info.AllocationBase) - 1;
-                probe_address -= probe_address % allocation_granularity;
-            }
-
-            return null;
-        },
-        else => {
-            var q: procmap.ProcmapQuery = .{
-                .query_addr = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range + std.heap.page_size_min,
-                .query_flags = .{ .vma_readable = true, .covering_or_next_vma = true },
-            };
-
-            q.query() catch |err| {
-                switch (err) {
-                    procmap.ProcmapQuery.QueryError.NotFound => return null,
-                    else => return err,
-                }
-            };
-
-            while (q.vma_start < q.query_addr) : (q.query() catch |err| {
-                switch (err) {
-                    procmap.ProcmapQuery.QueryError.NotFound => return null,
-                    else => return err,
-                }
-            }) {
-                if (q.vma_start >= addr + max_memory_range or q.vma_end > addr + max_memory_range)
-                    return null;
-                q.query_addr = q.vma_end;
-            }
-
-            return q.vma_end;
-        },
-    }
+    return switch (target) {
+        .windows => findUnmappedAreaNearAddressWindows(addr),
+        .linux => findUnmappedAddressWithinLinux(bounds),
+        else => unreachable,
+    };
 }
 
 pub fn delta(a: usize, b: usize) isize {
