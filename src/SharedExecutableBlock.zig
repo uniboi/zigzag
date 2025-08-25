@@ -95,7 +95,7 @@ pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
 }
 
 pub fn initNearAddress(address: usize) AllocBlockError!*SharedExecutableBlock {
-    const region = try mem.unmapped_area_near(address) orelse return AllocBlockError.UnavailableNearbyPage;
+    const region = try mem.unmapped_area_near(.rip(address), memory_block_size) orelse return AllocBlockError.UnavailableNearbyPage;
     return init(region);
 }
 

@@ -126,8 +126,27 @@ pub const QueryError = switch (target) {
     else => unreachable,
 };
 
+fn pageAlign(addr: usize, page_size: usize) usize {
+    return addr - (addr % page_size);
+}
+
+fn vmaGapSize(addr: usize) QueryError!usize {
+    var q: procmap.ProcmapQuery = .{
+        .query_addr = addr,
+        .query_flags = .{ .covering_or_next_vma = true },
+    };
+    try q.query();
+
+    // no further VMAs are mapped
+    if(q.query_addr >= q.vma_end) {
+        return std.math.maxInt(usize) - addr;
+    }
+
+    return q.vma_start - addr;
+}
+
 /// Returns the starting address of a page that starts within the range
-fn findUnmappedAreaWithinLinux(bounds: Range) QueryError!?usize {
+fn findUnmappedAreaWithinLinux(bounds: Range, gap_size: usize) QueryError!?usize {
     var q: procmap.ProcmapQuery = .{
         .query_addr = bounds.from,
         .query_flags = .{ .covering_or_next_vma = true },
@@ -136,14 +155,13 @@ fn findUnmappedAreaWithinLinux(bounds: Range) QueryError!?usize {
     try q.query();
     while(q.vma_end <= bounds.to) {
         // no further VMAs are mapped
-        if(q.query_addr == q.vma_end) {
+        if(q.query_addr >= q.vma_end) {
             return q.vma_end;
         }
 
         // we found a gap between VMAs
-        if(q.vma_start > q.query_addr) {
-            // align query_addr to the start of the containing page
-            return q.query_addr - (q.query_addr % allocation_granularity);
+        if(q.vma_start > q.query_addr and try vmaGapSize(pageAlign(q.query_addr, allocation_granularity)) >= gap_size) {
+            return pageAlign(q.query_addr, allocation_granularity);
         }
 
         q.query_addr = q.vma_end;
@@ -154,8 +172,8 @@ fn findUnmappedAreaWithinLinux(bounds: Range) QueryError!?usize {
 }
 
 /// Returns an address contained within a page that starts within the provided range
-fn findUnmappedAreaWithinWindows(bounds: Range) QueryError!?usize {
-    var probe_address = bounds.from - (bounds.from % allocation_granularity);
+fn findUnmappedAreaWithinWindows(bounds: Range, gap_size: usize) QueryError!?usize {
+    var probe_address = pageAlign(bounds.from, allocation_granularity);
     while (probe_address < bounds.to) {
         var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
         const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(@TypeOf(memory_info)));
@@ -164,26 +182,27 @@ fn findUnmappedAreaWithinWindows(bounds: Range) QueryError!?usize {
             break;
         }
 
-        if (memory_info.State == std.os.windows.MEM_FREE) {
+        if (memory_info.State == std.os.windows.MEM_FREE and memory_info.RegionSize >= gap_size) {
             return probe_address;
         }
 
-        probe_address = @intFromPtr(memory_info.BaseAddress) + memory_info.RegionSize * 8;
+        probe_address = @intFromPtr(memory_info.BaseAddress) + memory_info.RegionSize;
         probe_address += allocation_granularity - 1;
-        probe_address -= probe_address % allocation_granularity;
+        probe_address = pageAlign(probe_address, allocation_granularity);
     }
 
     return null;
 }
 
-pub fn unmapped_area_near(addr: usize) QueryError!?usize {
+/// bounds: min & max address where we're looking for an unallocated vma
+/// size: minimum size of the vma required
+pub fn unmapped_area_near(bounds: Range, size: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
-    const bounds: Range = .rip(addr);
 
     return switch (target) {
-        .windows => findUnmappedAreaWithinWindows(bounds),
-        .linux => findUnmappedAreaWithinLinux(bounds),
+        .windows => findUnmappedAreaWithinWindows(bounds, size),
+        .linux => findUnmappedAreaWithinLinux(bounds, size),
         else => unreachable,
     };
 }
