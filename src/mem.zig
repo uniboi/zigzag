@@ -93,7 +93,6 @@ fn loadGranularity() void {
 
 var mmap_min_addr_once = std.once(loadMinAddr);
 var allocation_granularity_once = std.once(loadGranularity);
-const max_memory_range = std.math.maxInt(i32) / 2;
 
 const Range = struct {
     from: usize,
@@ -154,6 +153,7 @@ fn findUnmappedAddressWithinLinux(bounds: Range) QueryError!?usize {
 }
 
 fn findUnmappedAreaNearAddressWindows(addr: usize) QueryError!?usize {
+    const max_memory_range = std.math.maxInt(u32) / 2;
     var probe_address: usize = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range;
 
     while (probe_address < addr + max_memory_range) {
