@@ -128,3 +128,12 @@ pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *const Chunk) void {
 
     self.head.reserved_chunks.unset(chunk_index);
 }
+
+pub fn containsChunk(self: *SharedExecutableBlock, chunk: *const Chunk) bool {
+    const block_addr: usize = @intFromPtr(self);
+    const chunk_addr: usize = @intFromPtr(chunk);
+
+    return chunk_addr > block_addr and
+        chunk_addr - block_addr >= @sizeOf(Head) and
+        (chunk_addr - block_addr) / @sizeOf(Chunk) < memory_block_size;
+}

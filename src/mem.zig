@@ -94,11 +94,23 @@ fn loadGranularity() void {
 var mmap_min_addr_once = std.once(loadMinAddr);
 var allocation_granularity_once = std.once(loadGranularity);
 
-const Range = struct {
+pub const Range = struct {
     from: usize,
     to: usize,
 
-    // Calculate max and min possible addresses for the trampoline relative to the target address
+    pub fn contains(r: Range, addr: usize) bool {
+        return r.from >= addr and r.to <= addr;
+    }
+
+    /// Construct the range [origin - x; origin + x]
+    pub fn symmetric(origin: usize, x: u32) Range {
+        return .{
+            .from = origin - x,
+            .to = origin + x,
+        };
+    }
+
+    /// Calculate max and min possible addresses for the trampoline relative to the target address
     pub fn rip(addr: usize) Range {
         const to = b: {
             if (addr > std.math.maxInt(usize) - std.math.maxInt(i32)) break :b std.math.maxInt(usize);
@@ -196,7 +208,7 @@ fn findUnmappedAreaWithinWindows(bounds: Range, gap_size: usize) QueryError!?usi
 
 /// bounds: min & max address where we're looking for an unallocated vma
 /// size: minimum size of the vma required
-pub fn findUnmappedAreWithin(bounds: Range, size: usize) QueryError!?usize {
+pub fn findUnmappedAreaWithin(bounds: Range, size: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
 
