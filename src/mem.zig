@@ -112,7 +112,7 @@ const Range = struct {
             };
         }
 
-        const from: usize = addr - std.math.minInt(u32) / 2;
+        const from: usize = addr - std.math.maxInt(u32) / 2;
         return .{
             .from = if(from < mmap_min_addr) mmap_min_addr else from,
             .to = to,
@@ -126,7 +126,8 @@ pub const QueryError = switch (target) {
     else => unreachable,
 };
 
-fn findUnmappedAddressWithinLinux(bounds: Range) QueryError!?usize {
+/// Returns the starting address of a page that starts within the range
+fn findUnmappedAreaWithinLinux(bounds: Range) QueryError!?usize {
     var q: procmap.ProcmapQuery = .{
         .query_addr = bounds.from,
         .query_flags = .{ .covering_or_next_vma = true },
@@ -152,13 +153,12 @@ fn findUnmappedAddressWithinLinux(bounds: Range) QueryError!?usize {
     return null;
 }
 
-fn findUnmappedAreaNearAddressWindows(addr: usize) QueryError!?usize {
-    const max_memory_range = std.math.maxInt(u32) / 2;
-    var probe_address: usize = if (max_memory_range > addr) mmap_min_addr else addr - max_memory_range;
-
-    while (probe_address < addr + max_memory_range) {
+/// Returns an address contained within a page that starts within the provided range
+fn findUnmappedAreaWithinWindows(bounds: Range) QueryError!?usize {
+    var probe_address = bounds.from - (bounds.from % allocation_granularity);
+    while (probe_address < bounds.to) {
         var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
-        const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(std.os.windows.MEMORY_BASIC_INFORMATION));
+        const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(@TypeOf(memory_info)));
 
         if (info_size == 0) {
             break;
@@ -168,7 +168,8 @@ fn findUnmappedAreaNearAddressWindows(addr: usize) QueryError!?usize {
             return probe_address;
         }
 
-        probe_address += @intFromPtr(memory_info.AllocationBase) - 1;
+        probe_address = @intFromPtr(memory_info.BaseAddress) + memory_info.RegionSize * 8;
+        probe_address += allocation_granularity - 1;
         probe_address -= probe_address % allocation_granularity;
     }
 
@@ -181,8 +182,8 @@ pub fn unmapped_area_near(addr: usize) QueryError!?usize {
     const bounds: Range = .rip(addr);
 
     return switch (target) {
-        .windows => findUnmappedAreaNearAddressWindows(addr),
-        .linux => findUnmappedAddressWithinLinux(bounds),
+        .windows => findUnmappedAreaWithinWindows(bounds),
+        .linux => findUnmappedAreaWithinLinux(bounds),
         else => unreachable,
     };
 }
