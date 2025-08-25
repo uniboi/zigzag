@@ -45,21 +45,19 @@ fn alloc(ctx: *anyopaque, origin: usize) Error!*Chunk {
     return chunk;
 }
 
-fn free(ctx: *anyopaque, ptr: *const Chunk) void {
+fn free(ctx: *anyopaque, chunk: *const Chunk) void {
     const self: *Allocator = @ptrCast(@alignCast(ctx));
-    const ptr_address = @intFromPtr(ptr);
-
     var current_block = self.first_block;
-    while (current_block) |block| : (current_block = block.head.next) {
-        const block_address = @intFromPtr(block);
-        if (ptr_address > block_address and (ptr_address - block_address) / @sizeOf(Chunk) < memory_block_size) {
-            block.releaseChunk(ptr);
+    while (current_block) |block| {
+        if (block.contains(chunk)) {
+            block.releaseChunk(chunk);
             return;
         }
+
+        current_block = block.head.next;
     }
 
-    // TODO: error handling when freeing a pointer not allocated by this allocator
-    unreachable;
+    @panic("chunk has not been allocated with this instance");
 }
 
 /// free all pages allocated by this allocator.

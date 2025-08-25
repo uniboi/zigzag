@@ -129,7 +129,7 @@ pub fn releaseChunk(self: *SharedExecutableBlock, chunk: *const Chunk) void {
     self.head.reserved_chunks.unset(chunk_index);
 }
 
-pub fn containsChunk(self: *const SharedExecutableBlock, chunk: *const Chunk) bool {
+pub fn contains(self: *const SharedExecutableBlock, chunk: *const Chunk) bool {
     const block_addr: usize = @intFromPtr(self);
     const chunk_addr: usize = @intFromPtr(chunk);
 
