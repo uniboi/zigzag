@@ -95,11 +95,17 @@ var mmap_min_addr_once = std.once(loadMinAddr);
 var allocation_granularity_once = std.once(loadGranularity);
 
 pub const Range = struct {
+    /// inclusive
     from: usize,
+    /// inclusive
     to: usize,
 
     pub fn contains(r: Range, addr: usize) bool {
         return r.from >= addr and r.to <= addr;
+    }
+
+    pub fn intersects(a: Range, b: Range) bool {
+        return a.from >= b.from or a.to <= b.to;
     }
 
     /// Construct the range [origin - x; origin + x]
@@ -129,6 +135,21 @@ pub const Range = struct {
             .from = if (from < mmap_min_addr) mmap_min_addr else from,
             .to = to,
         };
+    }
+
+    test {
+        {
+            const a: Range = .{ .from = 0, .to = 10 };
+            const b: Range = .{ .from = 5, .to = 15 };
+            try std.testing.expect(a.intersects(b));
+            try std.testing.expect(b.intersects(a));
+        }
+
+        {
+            const a: Range = .{ .from = 5, .to = 10 };
+            const b: Range = .{ .from = 4, .to = 6 };
+            try std.testing.expect(b.intersects(a));
+        }
     }
 };
 

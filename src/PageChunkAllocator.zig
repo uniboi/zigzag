@@ -12,6 +12,9 @@ const Hook = @import("hooks.zig");
 const trampoline_buffer_size = Hook.trampoline_buffer_size;
 const getPages = Hook.getPages;
 
+const mem = @import("mem.zig");
+const Range = mem.Range;
+
 const Allocator = @This();
 pub const memory_block_size = 0x1000;
 
@@ -24,17 +27,15 @@ pub fn init() SharedExecutableBlock.CacheMinAddressError!Allocator {
     };
 }
 
+/// Try to allocate a chunk near origin
 fn alloc(ctx: *anyopaque, origin: usize) Error!*Chunk {
-    // TODO: refactor distance calculations everywhere in this file
-    const max_distance = std.math.maxInt(i32);
     const self: *Allocator = @ptrCast(@alignCast(ctx));
-
-    var current_block = self.first_block;
-    while (current_block) |block| : (current_block = block.head.next) {
-        const block_address = @intFromPtr(block);
-        if ((block_address < origin) and (origin - block_address <= max_distance)) {
+    var next_block = self.first_block;
+    while (next_block) |block| {
+        if(block.chunksRange().intersects(.rip(origin))) {
             return block.reserveChunk() catch continue;
         }
+        next_block = block.head.next;
     }
 
     const prev = self.first_block;

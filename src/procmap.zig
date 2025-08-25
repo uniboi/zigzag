@@ -101,11 +101,11 @@ test {
         .query_flags = .{ .covering_or_next_vma = true },
     };
 
-    while(true) {
-        // std.debug.print("{x}\n", .{q.query_addr});
+    for(0..20) |_| {
+        std.debug.print("{x}\n", .{q.query_addr});
         try q.query();
         std.debug.print("{x}-{x}\n", .{q.vma_start, q.vma_end});
         if(q.query_addr == q.vma_end) break;
-        q.query_addr = q.vma_end;
+        q.query_addr = q.vma_end + 1;
     }
 }
