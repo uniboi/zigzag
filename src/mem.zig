@@ -196,7 +196,7 @@ fn findUnmappedAreaWithinWindows(bounds: Range, gap_size: usize) QueryError!?usi
 
 /// bounds: min & max address where we're looking for an unallocated vma
 /// size: minimum size of the vma required
-pub fn unmapped_area_near(bounds: Range, size: usize) QueryError!?usize {
+pub fn findUnmappedAreWithin(bounds: Range, size: usize) QueryError!?usize {
     mmap_min_addr_once.call();
     allocation_granularity_once.call();
 
