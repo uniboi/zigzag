@@ -20,7 +20,7 @@ pub fn main() !void {
     const chunk_allocator = pca.allocator();
 
     const square_hook = try zz.Hook(SquareSignature).init(chunk_allocator, @constCast(&square), square_detour);
-    defer _ = square_hook.deinit();
+    defer _ = square_hook.deinit(chunk_allocator);
     square_delegate = square_hook.delegate;
 
     try std.testing.expect(square(2) == 4);
