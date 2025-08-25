@@ -96,27 +96,16 @@ const procmap_query = std.os.linux.IOCTL.IOWR(procfs_ioctl_magic, 17, ProcmapQue
 const std = @import("std");
 
 test {
-    var path_buf: [255]u8 = .{0} ** 255;
-    // var build_id_buf: [255]u8 = .{0} ** 255;
-
     var q: ProcmapQuery = .{
-        .size = @sizeOf(ProcmapQuery),
-        .query_flags = .{ .vma_readable = true },
-        .query_addr = @intFromPtr(&path_buf),
-        .vma_name_addr = @intFromPtr(&path_buf),
-        .vma_name_size = 255,
-        // .build_id_addr = @intFromPtr(&build_id_buf),
-        // .build_id_size = 255,
+        .query_addr = 0,
+        .query_flags = .{ .covering_or_next_vma = true },
     };
 
-    try q.query();
-    std.debug.print(
-        "{x}\n{x}\n{}\n{?s}\n",
-        .{
-            q.vma_start,
-            q.vma_end,
-            q.vma_flags,
-            @as(?[*:0]u8, @ptrFromInt(q.vma_name_addr)),
-        },
-    );
+    while(true) {
+        // std.debug.print("{x}\n", .{q.query_addr});
+        try q.query();
+        std.debug.print("{x}-{x}\n", .{q.vma_start, q.vma_end});
+        if(q.query_addr == q.vma_end) break;
+        q.query_addr = q.vma_end;
+    }
 }

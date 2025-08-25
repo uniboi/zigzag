@@ -135,15 +135,19 @@ fn findUnmappedAddressWithinLinux(bounds: Range) QueryError!?usize {
 
     try q.query();
     while(q.vma_end <= bounds.to) {
+        // no further VMAs are mapped
+        if(q.query_addr == q.vma_end) {
+            return q.vma_end;
+        }
+
+        // we found a gap between VMAs
         if(q.vma_start > q.query_addr) {
+            // align query_addr to the start of the containing page
             return q.query_addr - (q.query_addr % allocation_granularity);
         }
 
         q.query_addr = q.vma_end;
-        q.query() catch |e| switch(e) {
-            error.NotFound => return q.query_addr - (q.query_addr % allocation_granularity),
-            else => return e,
-        };
+        try q.query();
     }
 
     return null;
