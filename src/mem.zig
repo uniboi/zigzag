@@ -101,11 +101,11 @@ const Range = struct {
     // Calculate max and min possible addresses for the trampoline relative to the target address
     pub fn rip(addr: usize) Range {
         const to = b: {
-            if(addr > std.math.maxInt(usize) - std.math.maxInt(i32)) break :b std.math.maxInt(usize);
+            if (addr > std.math.maxInt(usize) - std.math.maxInt(i32)) break :b std.math.maxInt(usize);
             break :b addr + std.math.maxInt(i32);
         };
 
-        if(addr < std.math.maxInt(i32) + 1) {
+        if (addr < std.math.maxInt(i32) + 1) {
             return .{
                 .from = mmap_min_addr,
                 .to = to,
@@ -114,7 +114,7 @@ const Range = struct {
 
         const from: usize = addr - std.math.maxInt(u32) / 2;
         return .{
-            .from = if(from < mmap_min_addr) mmap_min_addr else from,
+            .from = if (from < mmap_min_addr) mmap_min_addr else from,
             .to = to,
         };
     }
@@ -138,7 +138,7 @@ fn vmaGapSize(addr: usize) QueryError!usize {
     try q.query();
 
     // no further VMAs are mapped
-    if(q.query_addr >= q.vma_end) {
+    if (q.query_addr >= q.vma_end) {
         return std.math.maxInt(usize) - addr;
     }
 
@@ -153,14 +153,14 @@ fn findUnmappedAreaWithinLinux(bounds: Range, gap_size: usize) QueryError!?usize
     };
 
     try q.query();
-    while(q.vma_end <= bounds.to) {
+    while (q.vma_end <= bounds.to) {
         // no further VMAs are mapped
-        if(q.query_addr >= q.vma_end) {
+        if (q.query_addr >= q.vma_end) {
             return q.vma_end;
         }
 
         // we found a gap between VMAs
-        if(q.vma_start > q.query_addr and try vmaGapSize(pageAlign(q.query_addr, allocation_granularity)) >= gap_size) {
+        if (q.vma_start > q.query_addr and try vmaGapSize(pageAlign(q.query_addr, allocation_granularity)) >= gap_size) {
             return pageAlign(q.query_addr, allocation_granularity);
         }
 

@@ -103,7 +103,11 @@ fn ripOpIndex(ops: [4]dis.Instruction.Operand) ?usize {
 }
 
 fn isAnyOpRip(ops: [4]dis.Instruction.Operand) bool {
-    return (ops[0] == .mem and ops[0].mem == .m_rip) or (ops[1] == .mem and ops[1].mem == .m_rip) or (ops[2] == .mem and ops[2].mem == .m_rip) or (ops[3] == .mem and ops[3].mem == .m_rip);
+    return (ops[0] == .mem and
+        ops[0].mem == .m_rip) or
+        (ops[1] == .mem and ops[1].mem == .m_rip) or
+        (ops[2] == .mem and ops[2].mem == .m_rip) or
+        (ops[3] == .mem and ops[3].mem == .m_rip);
 }
 
 fn writeAbsoluteJump(address: [*]u8, destination: usize) void {

@@ -78,7 +78,7 @@ head: Head,
 chunks: [chunk_amount]Chunk,
 
 pub fn init(address: usize) AllocBlockError!*SharedExecutableBlock {
-    const blob: *SharedExecutableBlock = @alignCast(@ptrCast(try mem.map(@ptrFromInt(address), memory_block_size, .{ .read = true, .write = true, .execute = true })));
+    const blob: *SharedExecutableBlock = @ptrCast(@alignCast(try mem.map(@ptrFromInt(address), memory_block_size, .{ .read = true, .write = true, .execute = true })));
 
     if (builtin.mode == .Debug) {
         @memset(@as(*[memory_block_size]u8, @ptrCast(blob)), 0xCC);
