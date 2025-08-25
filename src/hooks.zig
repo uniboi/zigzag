@@ -143,9 +143,8 @@ pub fn Hook(comptime T: type) type {
 
             // allow writing instructions in the pages that need to be patched
             const pages = getPages(target_address);
-            try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC);
+            _ = try mem.protect(pages, .everything);
 
-            // TODO: try to allocate a new buffer if no chunks are free
             const trampoline_buffer = try chunk_allocator.alloc(target_address);
             const trampoline_size = try writeTrampolineBody(@intFromPtr(trampoline_buffer), target_address);
 
@@ -156,7 +155,7 @@ pub fn Hook(comptime T: type) type {
             @memcpy(target_bytes[0..@sizeOf(JMP_ABS)], @as([*]const u8, @ptrCast(&jmp_to_hook)));
 
             // TODO: query status out of /proc/self/maps before overwriting access and revert to it here
-            try std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC);
+            _ = try mem.protect(pages, .{ .read = true, .execute = true });
 
             return .{
                 .target = target,
@@ -179,8 +178,7 @@ pub fn Hook(comptime T: type) type {
             self.allocator.free(@ptrCast(self.delegate));
 
             const pages = getPages(@intFromPtr(self.target));
-
-            std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC) catch return DeinitError.CannotRevertInstructions;
+            _ = mem.protect(pages, .{ .read = true, .write = true, .execute = true }) catch return error.CannotRevertInstructions;
             const body: [*]u8 = @ptrCast(self.target);
             @memcpy(body, &self.replaced_instructions);
             std.posix.mprotect(pages, std.posix.PROT.READ | std.posix.PROT.EXEC) catch return DeinitError.CannotRevertPermissions;

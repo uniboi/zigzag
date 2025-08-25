@@ -52,6 +52,10 @@ pub const ProcmapQuery = extern struct {
         executable: bool = false,
         shared: bool = false,
         _: u60 = 0,
+
+        pub fn prot(f: VmaFlags) mem.Protection {
+            return .{ .read = f.readable, .write = f.writable, .execute = f.executable };
+        }
     };
 
     pub const QueryError = error{
@@ -94,6 +98,7 @@ const procfs_ioctl_magic = 'f';
 const procmap_query = std.os.linux.IOCTL.IOWR(procfs_ioctl_magic, 17, ProcmapQuery);
 
 const std = @import("std");
+const mem = @import("mem.zig");
 
 test {
     var q: ProcmapQuery = .{

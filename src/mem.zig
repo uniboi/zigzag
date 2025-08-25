@@ -14,33 +14,84 @@ pub const Protection = packed struct {
     write: bool = false,
     read: bool = false,
 
+    pub const everything: Protection = .{ .read = true, .write = true, .execute = true };
+
     fn flags(prot: Protection) u32 {
         return switch (target) {
-            .windows => {
-                if (prot.execute and prot.write and prot.read) {
-                    return windows.PAGE_EXECUTE_READWRITE;
-                }
-
-                if (prot.write and prot.read) {
-                    return windows.PAGE_READWRITE;
-                }
-
-                if (prot.read) {
-                    return windows.PAGE_READONLY;
-                }
-
-                return windows.PAGE_NOACCESS;
-            },
-            else => if (!prot.execute and !prot.write and !prot.read) @as(u32, PROT.NONE) else if (prot.execute) @as(u32, PROT.WRITE) else 0 |
-                if (prot.write) @as(u32, PROT.WRITE) else 0 |
-                    if (prot.read) @as(u32, PROT.READ) else 0,
+            .windows => prot.winapiFlags(),
+            .linux => prot.posixFlags(),
+            else => unreachable,
         };
+    }
+
+    fn posixFlags(p: Protection) u32 {
+        var f: u32 = 0;
+        f |= if (p.read) PROT.READ else PROT.NONE;
+        f |= if (p.write) PROT.WRITE else PROT.NONE;
+        f |= if (p.execute) PROT.EXEC else PROT.NONE;
+
+        return f;
+    }
+
+    fn winapiFlags(p: Protection) u32 {
+        // TODO: this could just be a switch on a packed struct once it's in the langauge
+        if (p == Protection{}) return windows.PAGE_NOACCESS;
+        if (p == Protection{ .read = true }) return windows.PAGE_READONLY;
+        if (p == Protection{ .read = true, .write = true }) return windows.PAGE_READWRITE;
+        if (p == Protection{ .execute = true }) return windows.PAGE_EXECUTE;
+        if (p == Protection{ .read = true, .execute = true }) return windows.PAGE_EXECUTE_READ;
+        if (p == Protection{ .read = true, .write = true, .execute = true }) return windows.PAGE_EXECUTE_READWRITE;
+
+        // +w -r is not allowed
+        unreachable;
+    }
+
+    fn fromWinapi(f: u32) Protection {
+        return switch (f) {
+            windows.PAGE_READONLY => .{ .read = true },
+            windows.PAGE_READWRITE, windows.PAGE_WRITECOPY => .{ .read = true, .write = true },
+            windows.PAGE_EXECUTE => .{ .execute = true },
+            windows.PAGE_EXECUTE_READ => .{ .execute = true },
+            windows.PAGE_EXECUTE_READWRITE, windows.PAGE_EXECUTE_WRITECOPY => .{ .execute = true, .read = true, .write = true },
+            else => .{},
+        };
+    }
+
+    fn fromPosix(f: u32) Protection {
+        return .{
+            .read = f & PROT.READ != 0,
+            .write = f & PROT.WRITE != 0,
+            .execute = f & PROT.EXEC != 0,
+        };
+    }
+
+    test {
+        const a: Protection = .everything;
+        try std.testing.expect(a.flagsLinux() == PROT.WRITE | PROT.READ | PROT.EXEC);
+
+        const b: Protection = .{ .read = true };
+        try std.testing.expect(b.flagsLinux() == PROT.READ);
+
+        const c: Protection = .{ .write = true };
+        try std.testing.expect(c.flagsLinux() == PROT.WRITE);
+
+        const d: Protection = .{ .execute = true };
+        try std.testing.expect(d.flagsLinux() == PROT.EXEC);
+
+        const e: Protection = .{};
+        try std.testing.expect(e.flagsLinux() == PROT.NONE);
     }
 };
 
 pub const MapError = switch (target) {
     .windows => windows.VirtualAllocError,
     else => std.posix.MMapError,
+};
+
+pub const ProtectError = switch (target) {
+    .windows => error{ AccessDenied, Unexpected },
+    .linux => error{ AccessDenied, OutOfMemory, Unexpected } || procmap.ProcmapQuery.QueryError,
+    else => unreachable,
 };
 
 pub fn map(addr: ?*anyopaque, size: usize, prot: Protection) MapError![]align(std.heap.page_size_min) u8 {
@@ -53,8 +104,31 @@ pub fn map(addr: ?*anyopaque, size: usize, prot: Protection) MapError![]align(st
 pub fn unmap(mem: []align(std.heap.page_size_min) u8) void {
     return switch (target) {
         .windows => windows.VirtualFree(mem.ptr, 0, windows.MEM_RELEASE),
-        else => std.posix.munmap(mem),
+        .linux => std.posix.munmap(mem),
+        else => unreachable,
     };
+}
+
+pub fn protect(mem: []align(std.heap.page_size_min) u8, prot: Protection) ProtectError!Protection {
+    switch (target) {
+        .windows => {
+            var prev: windows.DWORD = undefined;
+            windows.VirtualProtect(mem.ptr, mem.len, prot.winapiFlags(), &prev) catch |err| switch (err) {
+                error.InvalidAddress => return error.AccessDenied,
+                error.Unexpected => return error.Unexpected,
+            };
+
+            return .fromWinapi(prev);
+        },
+        .linux => {
+            var q: procmap.ProcmapQuery = .{ .query_addr = @intFromPtr(mem.ptr), .query_flags = .{} };
+            try q.query();
+
+            try std.posix.mprotect(mem, prot.posixFlags());
+            return q.vma_flags.prot();
+        },
+        else => unreachable,
+    }
 }
 
 var mmap_min_addr: usize = undefined;
