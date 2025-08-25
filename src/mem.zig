@@ -233,10 +233,6 @@ pub const QueryError = switch (target) {
     else => unreachable,
 };
 
-fn pageAlign(addr: usize, page_size: usize) usize {
-    return addr - (addr % page_size);
-}
-
 fn vmaGapSize(addr: usize) QueryError!usize {
     var q: procmap.ProcmapQuery = .{
         .query_addr = addr,
@@ -267,8 +263,8 @@ fn findUnmappedAreaWithinLinux(bounds: Range, gap_size: usize) QueryError!?usize
         }
 
         // we found a gap between VMAs
-        if (q.vma_start > q.query_addr and try vmaGapSize(pageAlign(q.query_addr, allocation_granularity)) >= gap_size) {
-            return pageAlign(q.query_addr, allocation_granularity);
+        if (q.vma_start > q.query_addr and try vmaGapSize(std.mem.alignBackward(usize, q.query_addr, allocation_granularity)) >= gap_size) {
+            return std.mem.alignBackward(usize, q.query_addr, allocation_granularity);
         }
 
         q.query_addr = q.vma_end;
@@ -280,7 +276,7 @@ fn findUnmappedAreaWithinLinux(bounds: Range, gap_size: usize) QueryError!?usize
 
 /// Returns an address contained within a page that starts within the provided range
 fn findUnmappedAreaWithinWindows(bounds: Range, gap_size: usize) QueryError!?usize {
-    var probe_address = pageAlign(bounds.from, allocation_granularity);
+    var probe_address = std.mem.alignBackward(usize, bounds.from, allocation_granularity);
     while (probe_address < bounds.to) {
         var memory_info: std.os.windows.MEMORY_BASIC_INFORMATION = undefined;
         const info_size = try std.os.windows.VirtualQuery(@ptrFromInt(probe_address), &memory_info, @sizeOf(@TypeOf(memory_info)));
@@ -295,7 +291,7 @@ fn findUnmappedAreaWithinWindows(bounds: Range, gap_size: usize) QueryError!?usi
 
         probe_address = @intFromPtr(memory_info.BaseAddress) + memory_info.RegionSize;
         probe_address += allocation_granularity - 1;
-        probe_address = pageAlign(probe_address, allocation_granularity);
+        probe_address = std.mem.alignBackward(usize, probe_address, allocation_granularity);
     }
 
     return null;
