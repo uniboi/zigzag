@@ -28,8 +28,8 @@ pub fn main() !void {
     try std.testing.expect(sqr(2) == 4);
 
     const sqr_hook = try zz.Hook(@TypeOf(sqr)).init(ca, @constCast(&sqr), sqr_detour);
-    // deinitializing a hook may fail when the page execute permission can't be removed
-    defer _ = sqr_hook.deinit();
+    // deinitializing a hook may fail because page permissions can't be revoked
+    defer sqr_hook.deinit(ca) catch @panic("could not uninstall hook");
 
     try std.testing.expect(sqr(2) == 5);
     try std.testing.expect(sqr_hook.delegate(2) == 4);

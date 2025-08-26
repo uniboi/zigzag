@@ -172,7 +172,7 @@ pub fn Hook(comptime T: type) type {
 
         /// revert patched instructions in the `target` body.
         /// returns null if successful
-        pub fn deinit(self: Self, allocator: ChunkAllocator) ?DeinitError {
+        pub fn deinit(self: Self, allocator: ChunkAllocator) DeinitError!void {
             allocator.free(@ptrCast(self.delegate));
 
             const pages = getPages(@intFromPtr(self.target));
@@ -180,8 +180,6 @@ pub fn Hook(comptime T: type) type {
             const body: [*]u8 = @ptrCast(self.target);
             @memcpy(body, &self.replaced_instructions);
             _ = mem.protect(pages, prot) catch return error.CannotRevertPermissions;
-
-            return null;
         }
 
         fn initTrampoline() void {}
