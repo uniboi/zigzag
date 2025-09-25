@@ -18,7 +18,7 @@ pub fn main() !void {
 
     {
         const add_hook = try zz.Hook(fn (i32, i32) i32).init(chunk_allocator, @constCast(&add), add_detour);
-        defer _ = add_hook.deinit(chunk_allocator);
+        defer add_hook.deinit(chunk_allocator) catch @panic("could not deinitialize hook");
 
         try std.testing.expect(add(1, 2) == 3);
         try std.testing.expect(add_hook.delegate(1, 2) == 4);
